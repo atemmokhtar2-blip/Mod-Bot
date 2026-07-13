@@ -1,11 +1,12 @@
 """
-Inline keyboard builders — Version 2 (Arabic UI).
+Inline keyboard builders — Version 3 (Professional UX & Security Update).
 
 All user-facing labels are pulled from bot.strings.ar.S.
-Every screen in the bot has its builder here; handlers import only from this module.
+Every screen has a ⬅️ رجوع button.
+Confirmations are required for destructive actions.
 
-Future: per-group language selection (pass lang param), dynamic plugin buttons,
-        paginated keyboards for large group/user lists.
+Future: per-group language selection, dynamic plugin buttons,
+        paginated keyboards for large lists.
 """
 
 from __future__ import annotations
@@ -21,31 +22,54 @@ from database.models import Filter, Group
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _back_btn(cb: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=S.btn_back, callback_data=cb)
+def _back_btn(cb: str, label: str = S.btn_back) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=label, callback_data=cb)
+
+
+def _status(enabled: bool) -> str:
+    return S.on if enabled else S.off
 
 
 # ---------------------------------------------------------------------------
-# Main dashboard
+# Group activation (V3) — URL button for deep linking
 # ---------------------------------------------------------------------------
 
-def main_menu_kb(groups: list[Group]) -> InlineKeyboardMarkup:
+def manage_group_url_kb(group_id: int, bot_username: str) -> InlineKeyboardMarkup:
+    """Shown in group chat after bot joins — opens private chat with deep link."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=S.btn_manage_group,
+        url=f"https://t.me/{bot_username}?start=grp_{group_id}",
+    )
+    return builder.as_markup()
+
+
+# ---------------------------------------------------------------------------
+# Main dashboard (private chat)
+# ---------------------------------------------------------------------------
+
+def main_menu_kb(groups: list[Group], active_group_id: int | None = None) -> InlineKeyboardMarkup:
     """Home screen shown in private chat after /start."""
     builder = InlineKeyboardBuilder()
 
     if groups:
-        for g in groups[:5]:
-            builder.button(
-                text=f"🏠 {g.title[:35]}",
-                callback_data=f"grp:select:{g.group_id}",
-            )
+        # Group switcher at the top
+        if len(groups) > 1:
+            builder.button(text=f"📋 مجموعاتي ({len(groups)})", callback_data="menu:groups")
+            builder.adjust(1)
+        # Use the active group (first or explicitly selected)
+        gid = active_group_id or groups[0].group_id
+        builder.button(text=S.btn_protection, callback_data=f"prot:menu:{gid}")
+        builder.button(text=S.btn_members,    callback_data=f"grp:members:{gid}")
+        builder.button(text=S.btn_admins,     callback_data=f"grp:admins:{gid}")
+        builder.button(text=S.btn_channels,   callback_data="menu:channels")
+        builder.button(text=S.btn_settings,   callback_data=f"grp:settings:{gid}")
+        builder.button(text=S.btn_help,       callback_data="menu:help")
+        builder.adjust(2, 2, 2, 1)
+    else:
+        builder.button(text=S.btn_help, callback_data="menu:help")
         builder.adjust(1)
 
-    builder.button(text="📋 " + "مجموعاتي", callback_data="menu:groups")
-    builder.button(text=S.btn_channels,    callback_data="menu:channels")
-    builder.button(text=S.btn_stats,       callback_data="menu:stats_global")
-    builder.button(text=S.btn_help,        callback_data="menu:help")
-    builder.adjust(2)
     return builder.as_markup()
 
 
@@ -71,38 +95,79 @@ def group_list_kb(groups: list[Group]) -> InlineKeyboardMarkup:
 
 def group_panel_kb(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text=S.btn_mod,             callback_data=f"grp:mod:{group_id}")
+    builder.button(text=S.btn_mod,             callback_data=f"prot:menu:{group_id}")
     builder.button(text=S.btn_panel_members,   callback_data=f"grp:members:{group_id}")
     builder.button(text=S.btn_panel_admins,    callback_data=f"grp:admins:{group_id}")
     builder.button(text=S.btn_panel_settings,  callback_data=f"grp:settings:{group_id}")
-    builder.button(text=S.btn_stats,           callback_data=f"grp:stats:{group_id}")
-    builder.button(text=S.btn_logs,            callback_data=f"grp:logs:{group_id}")
     builder.row(InlineKeyboardButton(text=S.btn_panel_back, callback_data="menu:groups"))
-    builder.adjust(2, 2, 2, 1)
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 
 # ---------------------------------------------------------------------------
-# Moderation menu
+# V3 Protection menu  (replaces old moderation menu in main nav)
 # ---------------------------------------------------------------------------
 
-def moderation_menu_kb(group_id: int, filters: list[Filter]) -> InlineKeyboardMarkup:
+# The 5 "quick" filters shown in the V3 protection page
+_PROT_FILTERS = [
+    ("insults",            S.filter_insults),
+    ("telegram_links",     S.filter_telegram_links),
+    ("spam",               S.filter_spam),
+    ("duplicate_messages", S.filter_duplicates),
+    ("advertisement",      S.filter_advertisement),
+]
+
+
+def protection_menu_kb(
+    group_id: int,
+    filters: list[Filter],
+    auto_protect: bool,
+) -> InlineKeyboardMarkup:
+    """V3 protection screen with 🟢/🔴 per filter and master auto-switch."""
     builder = InlineKeyboardBuilder()
-    active = sum(1 for f in filters if f.enabled)
-    total = len(filters)
-    builder.button(
-        text=S.btn_filters.format(active=active, total=total),
-        callback_data=f"mod:filters:{group_id}",
-    )
-    builder.button(text=S.btn_actions,    callback_data=f"mod:actions:{group_id}")
-    builder.button(text=S.btn_warn_limit, callback_data=f"mod:warnlimit:{group_id}")
+    fmap = {f.filter_type: f for f in filters}
+
+    for ft, label in _PROT_FILTERS:
+        f = fmap.get(ft)
+        st = _status(f.enabled if f else False)
+        builder.button(
+            text=f"{st} {label}",
+            callback_data=f"prot:toggle:{group_id}:{ft}",
+        )
+
+    # Master auto-protect switch
+    ap_label = S.btn_auto_protect_on if auto_protect else S.btn_auto_protect_off
+    builder.button(text=ap_label, callback_data=f"prot:auto:{group_id}")
+
+    # Advanced filters link
+    builder.button(text="🔍 فلاتر متقدمة", callback_data=f"grp:mod:{group_id}")
+
     builder.row(_back_btn(f"grp:panel:{group_id}"))
     builder.adjust(1)
     return builder.as_markup()
 
 
 # ---------------------------------------------------------------------------
-# Filter list
+# Moderation menu (advanced — kept for backwards compat)
+# ---------------------------------------------------------------------------
+
+def moderation_menu_kb(group_id: int, filters: list[Filter]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    active = sum(1 for f in filters if f.enabled)
+    total  = len(filters)
+    builder.button(
+        text=S.btn_filters.format(active=active, total=total),
+        callback_data=f"mod:filters:{group_id}",
+    )
+    builder.button(text=S.btn_actions,    callback_data=f"mod:actions:{group_id}")
+    builder.button(text=S.btn_warn_limit, callback_data=f"mod:warnlimit:{group_id}")
+    builder.row(_back_btn(f"prot:menu:{group_id}"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ---------------------------------------------------------------------------
+# Filter list (full — advanced)
 # ---------------------------------------------------------------------------
 
 _FILTER_LABELS: dict[str, str] = {
@@ -132,8 +197,8 @@ _ACTION_LABELS: dict[str, str] = {
 def filters_list_kb(group_id: int, filters: list[Filter]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for f in filters:
-        label = _FILTER_LABELS.get(f.filter_type, f.filter_type)
-        status = "✅" if f.enabled else "❌"
+        label  = _FILTER_LABELS.get(f.filter_type, f.filter_type)
+        status = _status(f.enabled)
         builder.button(
             text=f"{status} {label}",
             callback_data=f"filter:toggle:{group_id}:{f.filter_type}",
@@ -158,10 +223,9 @@ def filter_action_kb(group_id: int, filter_type: str, current_action: str) -> In
 
 
 def filter_actions_menu_kb(group_id: int, filters: list[Filter]) -> InlineKeyboardMarkup:
-    """List all filters so admin can pick which to configure."""
     builder = InlineKeyboardBuilder()
     for f in filters:
-        label = _FILTER_LABELS.get(f.filter_type, f.filter_type)
+        label        = _FILTER_LABELS.get(f.filter_type, f.filter_type)
         action_label = _ACTION_LABELS.get(f.action, f.action)
         builder.button(
             text=f"{label} ← {action_label}",
@@ -178,8 +242,8 @@ def filter_actions_menu_kb(group_id: int, filters: list[Filter]) -> InlineKeyboa
 
 def settings_menu_kb(group_id: int, welcome_enabled: bool, log_events: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    w_status = S.enabled if welcome_enabled else S.disabled
-    l_status = S.enabled if log_events else S.disabled
+    w_status = f"{_status(welcome_enabled)} {S.enabled if welcome_enabled else S.disabled}"
+    l_status = f"{_status(log_events)} {S.enabled if log_events else S.disabled}"
 
     builder.button(
         text=S.btn_welcome_toggle.format(status=w_status),
@@ -275,7 +339,7 @@ def channel_panel_kb(channel_id: int) -> InlineKeyboardMarkup:
 
 
 # ---------------------------------------------------------------------------
-# Generic navigation
+# Generic navigation & confirmations
 # ---------------------------------------------------------------------------
 
 def back_kb(callback_data: str) -> InlineKeyboardMarkup:
@@ -285,8 +349,9 @@ def back_kb(callback_data: str) -> InlineKeyboardMarkup:
 
 
 def confirm_kb(yes_data: str, no_data: str) -> InlineKeyboardMarkup:
+    """V3 confirmation keyboard for destructive actions."""
     builder = InlineKeyboardBuilder()
-    builder.button(text=S.confirm, callback_data=yes_data)
-    builder.button(text=S.cancel,  callback_data=no_data)
+    builder.button(text=S.confirm_yes, callback_data=yes_data)
+    builder.button(text=S.confirm_no,  callback_data=no_data)
     builder.adjust(2)
     return builder.as_markup()

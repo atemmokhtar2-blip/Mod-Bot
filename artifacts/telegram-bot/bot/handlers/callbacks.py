@@ -1,5 +1,18 @@
 """
-All CallbackQuery handlers — Version 2 (full Arabic UI).
+All CallbackQuery handlers — Version 3 (Professional UX & Security Update).
+
+Security model (V3)
+-------------------
+Every callback that touches a specific group checks that the user is
+authorised for that group via _ensure_authorized().  Non-admins see:
+  ⛔ ليس لديك صلاحية لاستخدام أدوات الإدارة.
+
+New in V3
+---------
+- prot namespace: dedicated protection menu with 🟢/🔴 per filter and master switch
+- Confirmation step for ban, mute, kick, reset-warns
+- Security guard on every group-scoped callback
+- Improved message formatting / navigation
 
 Callback data format:  <namespace>:<action>[:<args...>]
 
@@ -7,10 +20,11 @@ Namespaces
 ----------
 menu    – top-level navigation
 grp     – group panel actions
-mod     – moderation section
+prot    – V3 protection menu
+mod     – advanced moderation section
 filter  – filter configuration
 settings – group settings
-member  – member actions
+member  – member actions (with confirmations)
 admin   – admin management
 ch      – channel actions
 
@@ -31,6 +45,7 @@ from bot.keyboards.builder import (
     back_kb,
     channel_panel_kb,
     channels_menu_kb,
+    confirm_kb,
     filter_action_kb,
     filter_actions_menu_kb,
     filters_list_kb,
@@ -39,6 +54,7 @@ from bot.keyboards.builder import (
     main_menu_kb,
     member_action_kb,
     moderation_menu_kb,
+    protection_menu_kb,
     punishment_kb,
     settings_menu_kb,
     _FILTER_LABELS,
@@ -62,16 +78,23 @@ router = Router(name="callbacks")
 
 class SettingsState(StatesGroup):
     waiting_for_welcome_text = State()
-    waiting_for_warn_limit = State()
+    waiting_for_warn_limit   = State()
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Core helpers
 # ---------------------------------------------------------------------------
 
 async def _answer(cb: CallbackQuery, text: str = "✅") -> None:
     try:
         await cb.answer(text)
+    except Exception:
+        pass
+
+
+async def _answer_alert(cb: CallbackQuery, text: str) -> None:
+    try:
+        await cb.answer(text, show_alert=True)
     except Exception:
         pass
 
@@ -83,6 +106,17 @@ async def _edit(cb: CallbackQuery, text: str, reply_markup=None) -> None:
         pass
 
 
+async def _ensure_authorized(cb: CallbackQuery, session: AsyncSession, group_id: int) -> bool:
+    """
+    V3 Security Guard — return True if caller is authorised to manage this group.
+    Shows an alert and returns False for unauthorised callers.
+    """
+    ok = await repo.is_authorized(session, group_id, cb.from_user.id)
+    if not ok:
+        await _answer_alert(cb, S.no_permission_cb)
+    return ok
+
+
 # ---------------------------------------------------------------------------
 # menu namespace
 # ---------------------------------------------------------------------------
@@ -91,11 +125,12 @@ async def _edit(cb: CallbackQuery, text: str, reply_markup=None) -> None:
 async def cb_home(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     groups = await repo.get_groups_for_user(session, cb.from_user.id)
-    await _edit(
-        cb,
-        S.home_title.format(name=escape_html(cb.from_user.first_name)),
-        reply_markup=main_menu_kb(groups),
-    )
+    name = escape_html(cb.from_user.first_name)
+    if groups:
+        title = S.home_title.format(name=name, group=escape_html(groups[0].title))
+    else:
+        title = S.home_title_no_group.format(name=name)
+    await _edit(cb, title, reply_markup=main_menu_kb(groups))
 
 
 @router.callback_query(F.data == "menu:groups")
@@ -145,6 +180,10 @@ async def cb_help(cb: CallbackQuery) -> None:
 async def cb_grp_select(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     group = await repo.get_group(session, group_id)
     if not group:
         await _edit(cb, S.not_found, reply_markup=back_kb("menu:groups"))
@@ -160,6 +199,10 @@ async def cb_grp_select(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_grp_panel(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     group = await repo.get_group(session, group_id)
     if not group:
         await _edit(cb, S.not_found, reply_markup=back_kb("menu:groups"))
@@ -173,11 +216,16 @@ async def cb_grp_panel(cb: CallbackQuery, session: AsyncSession) -> None:
 
 @router.callback_query(F.data.startswith("grp:mod:"))
 async def cb_grp_mod(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Advanced moderation section (full filter list)."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    group = await repo.get_group(session, group_id)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    group   = await repo.get_group(session, group_id)
     filters = await repo.get_filters(session, group_id)
-    title = escape_html(group.title) if group else str(group_id)
+    title   = escape_html(group.title) if group else str(group_id)
     await _edit(
         cb,
         S.mod_title.format(title=title),
@@ -189,7 +237,11 @@ async def cb_grp_mod(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_grp_settings(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    group = await repo.get_group(session, group_id)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    group    = await repo.get_group(session, group_id)
     settings = await repo.get_settings(session, group_id)
     if not settings:
         await _edit(cb, S.not_found, reply_markup=back_kb(f"grp:panel:{group_id}"))
@@ -206,6 +258,10 @@ async def cb_grp_settings(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_grp_stats(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     group = await repo.get_group(session, group_id)
     await refresh_member_count(bot, session, group_id)
     rows = await repo.get_stats(session, group_id, days=7)
@@ -217,24 +273,27 @@ async def cb_grp_stats(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> No
 async def cb_grp_logs(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     logs = await repo.get_recent_logs(session, group_id, limit=15)
 
-    # Arabic event-type labels
     event_labels: dict[str, str] = {
-        "user_joined":       S.log_user_joined,
-        "user_left":         S.log_user_left,
-        "user_banned":       S.log_user_banned,
-        "user_unbanned":     S.log_user_unbanned,
-        "user_muted":        S.log_user_muted,
-        "user_unmuted":      S.log_user_unmuted,
-        "user_warned":       S.log_user_warned,
-        "message_deleted":   S.log_message_deleted,
-        "message_pinned":    S.log_message_pinned,
-        "message_unpinned":  S.log_message_unpinned,
-        "settings_changed":  S.log_settings_changed,
-        "filter_triggered":  S.log_filter_triggered,
-        "bot_added":         S.log_bot_added,
-        "bot_removed":       S.log_bot_removed,
+        "user_joined":      S.log_user_joined,
+        "user_left":        S.log_user_left,
+        "user_banned":      S.log_user_banned,
+        "user_unbanned":    S.log_user_unbanned,
+        "user_muted":       S.log_user_muted,
+        "user_unmuted":     S.log_user_unmuted,
+        "user_warned":      S.log_user_warned,
+        "message_deleted":  S.log_message_deleted,
+        "message_pinned":   S.log_message_pinned,
+        "message_unpinned": S.log_message_unpinned,
+        "settings_changed": S.log_settings_changed,
+        "filter_triggered": S.log_filter_triggered,
+        "bot_added":        S.log_bot_added,
+        "bot_removed":      S.log_bot_removed,
     }
 
     if not logs:
@@ -243,8 +302,8 @@ async def cb_grp_logs(cb: CallbackQuery, session: AsyncSession) -> None:
 
     lines = [S.logs_title, ""]
     for entry in logs:
-        label = event_labels.get(entry.event_type, entry.event_type)
-        ts = format_datetime_ar(entry.created_at)
+        label  = event_labels.get(entry.event_type, entry.event_type)
+        ts     = format_datetime_ar(entry.created_at)
         detail = f" — {escape_html(entry.details[:60])}" if entry.details else ""
         lines.append(f"• <b>{label}</b> [{ts}]{detail}")
 
@@ -255,6 +314,10 @@ async def cb_grp_logs(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_grp_members(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     await _edit(cb, S.members_title, reply_markup=back_kb(f"grp:panel:{group_id}"))
 
 
@@ -262,6 +325,10 @@ async def cb_grp_members(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_grp_admins(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     admins = await repo.get_admins(session, group_id)
     if not admins:
         await _edit(cb, S.admins_no_extra, reply_markup=back_kb(f"grp:panel:{group_id}"))
@@ -271,13 +338,155 @@ async def cb_grp_admins(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# mod namespace
+# prot namespace — V3 Protection Menu
+# ---------------------------------------------------------------------------
+
+@router.callback_query(F.data.startswith("prot:menu:"))
+async def cb_prot_menu(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Show the V3 protection menu with 🟢/🔴 per filter."""
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    filters  = await repo.get_filters(session, group_id)
+    settings = await repo.get_settings(session, group_id)
+    auto     = settings.auto_protect_enabled if settings else False
+
+    # Build the filter status lines for the header
+    _PROT_MAP = [
+        ("insults",            S.filter_insults),
+        ("telegram_links",     S.filter_telegram_links),
+        ("spam",               S.filter_spam),
+        ("duplicate_messages", S.filter_duplicates),
+        ("advertisement",      S.filter_advertisement),
+    ]
+    fmap = {f.filter_type: f for f in filters}
+    lines = []
+    for ft, label in _PROT_MAP:
+        f  = fmap.get(ft)
+        st = (S.on if f and f.enabled else S.off)
+        lines.append(f"{st} {label}")
+
+    auto_line = f"{S.on if auto else S.off} التفعيل التلقائي"
+    lines.append(auto_line)
+
+    text = S.protection_title.format(filters="\n".join(lines) + "\n")
+    await _edit(cb, text, reply_markup=protection_menu_kb(group_id, filters, auto))
+
+
+@router.callback_query(F.data.startswith("prot:toggle:"))
+async def cb_prot_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Toggle a single quick-protection filter."""
+    await _answer(cb)
+    parts     = cb.data.split(":")  # prot:toggle:{group_id}:{filter_type}
+    group_id  = int(parts[2])
+    ft        = parts[3]
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    f = await repo.get_filter(session, group_id, ft)
+    if not f:
+        return
+    new_state = not f.enabled
+    await repo.update_filter(session, group_id, ft, enabled=new_state)
+
+    # If toggling links, also toggle external_links in sync
+    if ft == "telegram_links":
+        await repo.update_filter(session, group_id, "external_links", enabled=new_state)
+
+    await repo.add_log(
+        session, group_id=group_id, event_type="settings_changed",
+        actor_id=cb.from_user.id,
+        details=f"prot filter {ft} → {'on' if new_state else 'off'}",
+    )
+
+    # Reload and re-render
+    filters  = await repo.get_filters(session, group_id)
+    settings = await repo.get_settings(session, group_id)
+    auto     = settings.auto_protect_enabled if settings else False
+
+    _PROT_MAP = [
+        ("insults",            S.filter_insults),
+        ("telegram_links",     S.filter_telegram_links),
+        ("spam",               S.filter_spam),
+        ("duplicate_messages", S.filter_duplicates),
+        ("advertisement",      S.filter_advertisement),
+    ]
+    fmap  = {f.filter_type: f for f in filters}
+    lines = []
+    for ft2, label in _PROT_MAP:
+        f2 = fmap.get(ft2)
+        st = (S.on if f2 and f2.enabled else S.off)
+        lines.append(f"{st} {label}")
+    auto_line = f"{S.on if auto else S.off} التفعيل التلقائي"
+    lines.append(auto_line)
+    text = S.protection_title.format(filters="\n".join(lines) + "\n")
+    await _edit(cb, text, reply_markup=protection_menu_kb(group_id, filters, auto))
+
+
+@router.callback_query(F.data.startswith("prot:auto:"))
+async def cb_prot_auto(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Master auto-protection switch: enable/disable all key filters at once."""
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings  = await repo.get_settings(session, group_id)
+    current   = settings.auto_protect_enabled if settings else False
+    new_state = not current
+
+    # Toggle all filters
+    await repo.toggle_all_filters(session, group_id, enabled=new_state)
+    # Save master switch state
+    await repo.update_settings(session, group_id, auto_protect_enabled=new_state)
+
+    await repo.add_log(
+        session, group_id=group_id, event_type="settings_changed",
+        actor_id=cb.from_user.id,
+        details=f"auto_protect → {'on' if new_state else 'off'}",
+    )
+
+    msg = S.auto_protect_enabled_msg if new_state else S.auto_protect_disabled_msg
+    await _answer_alert(cb, msg)
+
+    # Re-render protection menu
+    filters  = await repo.get_filters(session, group_id)
+    _PROT_MAP = [
+        ("insults",            S.filter_insults),
+        ("telegram_links",     S.filter_telegram_links),
+        ("spam",               S.filter_spam),
+        ("duplicate_messages", S.filter_duplicates),
+        ("advertisement",      S.filter_advertisement),
+    ]
+    fmap  = {f.filter_type: f for f in filters}
+    lines = []
+    for ft, label in _PROT_MAP:
+        f  = fmap.get(ft)
+        st = (S.on if f and f.enabled else S.off)
+        lines.append(f"{st} {label}")
+    auto_line = f"{S.on if new_state else S.off} التفعيل التلقائي"
+    lines.append(auto_line)
+    text = S.protection_title.format(filters="\n".join(lines) + "\n")
+    await _edit(cb, text, reply_markup=protection_menu_kb(group_id, filters, new_state))
+
+
+# ---------------------------------------------------------------------------
+# mod namespace (advanced — full filter list)
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("mod:filters:"))
 async def cb_mod_filters(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     filters = await repo.get_filters(session, group_id)
     await _edit(cb, S.filters_title, reply_markup=filters_list_kb(group_id, filters))
 
@@ -286,6 +495,10 @@ async def cb_mod_filters(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_mod_actions(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     filters = await repo.get_filters(session, group_id)
     await _edit(cb, S.filter_actions_title, reply_markup=filter_actions_menu_kb(group_id, filters))
 
@@ -294,8 +507,12 @@ async def cb_mod_actions(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_mod_warnlimit(cb: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     settings = await repo.get_settings(session, group_id)
-    current = settings.warning_limit if settings else 3
+    current  = settings.warning_limit if settings else 3
     await state.update_data(group_id=group_id)
     await state.set_state(SettingsState.waiting_for_warn_limit)
     await _edit(
@@ -314,6 +531,10 @@ async def cb_filter_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     _, _, group_id_str, filter_type = cb.data.split(":", 3)
     group_id = int(group_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     f = await repo.get_filter(session, group_id, filter_type)
     if not f:
         return
@@ -332,6 +553,10 @@ async def cb_filter_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_filter_actions(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     filters = await repo.get_filters(session, group_id)
     await _edit(cb, S.filter_actions_title, reply_markup=filter_actions_menu_kb(group_id, filters))
 
@@ -341,10 +566,14 @@ async def cb_filter_editaction(cb: CallbackQuery, session: AsyncSession) -> None
     await _answer(cb)
     _, _, group_id_str, filter_type = cb.data.split(":", 3)
     group_id = int(group_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     f = await repo.get_filter(session, group_id, filter_type)
     if not f:
         return
-    fname = _FILTER_LABELS.get(filter_type, filter_type)
+    fname  = _FILTER_LABELS.get(filter_type, filter_type)
     faction = _ACTION_LABELS.get(f.action, f.action)
     await _edit(
         cb,
@@ -356,17 +585,21 @@ async def cb_filter_editaction(cb: CallbackQuery, session: AsyncSession) -> None
 @router.callback_query(F.data.startswith("filter:setaction:"))
 async def cb_filter_setaction(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
-    parts = cb.data.split(":")
-    group_id = int(parts[2])
+    parts       = cb.data.split(":")
+    group_id    = int(parts[2])
     filter_type = parts[3]
-    action = parts[4]
+    action      = parts[4]
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     await repo.update_filter(session, group_id, filter_type, action=action)
     await repo.add_log(
         session, group_id=group_id, event_type="settings_changed",
         actor_id=cb.from_user.id,
         details=f"filter {filter_type} action → {action}",
     )
-    fname = _FILTER_LABELS.get(filter_type, filter_type)
+    fname  = _FILTER_LABELS.get(filter_type, filter_type)
     faction = _ACTION_LABELS.get(action, action)
     await _edit(
         cb,
@@ -383,6 +616,10 @@ async def cb_filter_setaction(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_toggle_welcome(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     settings = await repo.get_settings(session, group_id)
     if not settings:
         return
@@ -390,12 +627,11 @@ async def cb_toggle_welcome(cb: CallbackQuery, session: AsyncSession) -> None:
     await repo.update_settings(session, group_id, welcome_enabled=new_val)
     await repo.add_log(
         session, group_id=group_id, event_type="settings_changed",
-        actor_id=cb.from_user.id,
-        details=f"welcome_enabled → {new_val}",
+        actor_id=cb.from_user.id, details=f"welcome_enabled → {new_val}",
     )
     updated = await repo.get_settings(session, group_id)
-    group = await repo.get_group(session, group_id)
-    title = escape_html(group.title) if group else str(group_id)
+    group   = await repo.get_group(session, group_id)
+    title   = escape_html(group.title) if group else str(group_id)
     await _edit(
         cb,
         S.settings_title.format(title=title),
@@ -407,14 +643,18 @@ async def cb_toggle_welcome(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_toggle_logs(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     settings = await repo.get_settings(session, group_id)
     if not settings:
         return
     new_val = not settings.log_events
     await repo.update_settings(session, group_id, log_events=new_val)
     updated = await repo.get_settings(session, group_id)
-    group = await repo.get_group(session, group_id)
-    title = escape_html(group.title) if group else str(group_id)
+    group   = await repo.get_group(session, group_id)
+    title   = escape_html(group.title) if group else str(group_id)
     await _edit(
         cb,
         S.settings_title.format(title=title),
@@ -426,8 +666,12 @@ async def cb_toggle_logs(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_edit_welcome(cb: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     settings = await repo.get_settings(session, group_id)
-    current = settings.welcome_text if settings else ""
+    current  = settings.welcome_text if settings else ""
     await state.update_data(group_id=group_id)
     await state.set_state(SettingsState.waiting_for_welcome_text)
     await _edit(
@@ -441,22 +685,29 @@ async def cb_edit_welcome(cb: CallbackQuery, session: AsyncSession, state: FSMCo
 async def cb_punishment(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     settings = await repo.get_settings(session, group_id)
-    current = settings.auto_punishment if settings else "mute"
+    current  = settings.auto_punishment if settings else "mute"
     await _edit(cb, S.punishment_title, reply_markup=punishment_kb(group_id, current))
 
 
 @router.callback_query(F.data.startswith("settings:setpunishment:"))
 async def cb_set_punishment(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
-    parts = cb.data.split(":")
-    group_id = int(parts[2])
+    parts      = cb.data.split(":")
+    group_id   = int(parts[2])
     punishment = parts[3]
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     await repo.update_settings(session, group_id, auto_punishment=punishment)
     await repo.add_log(
         session, group_id=group_id, event_type="settings_changed",
-        actor_id=cb.from_user.id,
-        details=f"auto_punishment → {punishment}",
+        actor_id=cb.from_user.id, details=f"auto_punishment → {punishment}",
     )
     p_labels = {"mute": S.punishment_mute, "kick": S.punishment_kick, "ban": S.punishment_ban}
     await _edit(
@@ -470,8 +721,12 @@ async def cb_set_punishment(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_settings_warnlimit(cb: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     settings = await repo.get_settings(session, group_id)
-    current = settings.warning_limit if settings else 3
+    current  = settings.warning_limit if settings else 3
     await state.update_data(group_id=group_id)
     await state.set_state(SettingsState.waiting_for_warn_limit)
     await _edit(
@@ -487,7 +742,7 @@ async def cb_settings_warnlimit(cb: CallbackQuery, session: AsyncSession, state:
 
 @router.message(SettingsState.waiting_for_welcome_text)
 async def fsm_welcome_text(message: Message, session: AsyncSession, state: FSMContext) -> None:
-    data = await state.get_data()
+    data     = await state.get_data()
     group_id = data.get("group_id")
     await state.clear()
     text = message.text or ""
@@ -503,7 +758,7 @@ async def fsm_welcome_text(message: Message, session: AsyncSession, state: FSMCo
 
 @router.message(SettingsState.waiting_for_warn_limit)
 async def fsm_warn_limit(message: Message, session: AsyncSession, state: FSMContext) -> None:
-    data = await state.get_data()
+    data     = await state.get_data()
     group_id = data.get("group_id")
     await state.clear()
     text = (message.text or "").strip()
@@ -516,19 +771,47 @@ async def fsm_warn_limit(message: Message, session: AsyncSession, state: FSMCont
 
 
 # ---------------------------------------------------------------------------
-# member namespace
+# member namespace — with V3 confirmation step for destructive actions
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("member:ban:"))
-async def cb_member_ban(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
+async def cb_member_ban(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Show confirmation before banning."""
+    await _answer(cb)
+    parts    = cb.data.split(":")
+    group_id = int(parts[2])
+    user_id  = int(parts[3])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    await _edit(
+        cb,
+        S.confirm_ban,
+        reply_markup=confirm_kb(
+            yes_data=f"member:ban_do:{group_id}:{user_id}",
+            no_data=f"grp:members:{group_id}",
+        ),
+    )
+
+
+@router.callback_query(F.data.startswith("member:ban_do:"))
+async def cb_member_ban_do(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb, "جارٍ الحظر…")
-    _, _, group_id_str, user_id_str = cb.data.split(":")
-    group_id, user_id = int(group_id_str), int(user_id_str)
+    parts    = cb.data.split(":")
+    group_id = int(parts[2])
+    user_id  = int(parts[3])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     success = await mod.ban_user(bot, session, chat_id=group_id, user_id=user_id,
                                   actor_id=cb.from_user.id)
-    await _edit(cb,
-                S.member_banned if success else S.member_ban_fail,
-                reply_markup=back_kb(f"grp:members:{group_id}"))
+    await _edit(
+        cb,
+        S.member_banned if success else S.member_ban_fail,
+        reply_markup=back_kb(f"grp:members:{group_id}"),
+    )
 
 
 @router.callback_query(F.data.startswith("member:unban:"))
@@ -536,23 +819,59 @@ async def cb_member_unban(cb: CallbackQuery, bot: Bot, session: AsyncSession) ->
     await _answer(cb, "جارٍ رفع الحظر…")
     _, _, group_id_str, user_id_str = cb.data.split(":")
     group_id, user_id = int(group_id_str), int(user_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     success = await mod.unban_user(bot, session, chat_id=group_id, user_id=user_id,
                                     actor_id=cb.from_user.id)
-    await _edit(cb,
-                S.member_unbanned if success else S.member_unban_fail,
-                reply_markup=back_kb(f"grp:members:{group_id}"))
+    await _edit(
+        cb,
+        S.member_unbanned if success else S.member_unban_fail,
+        reply_markup=back_kb(f"grp:members:{group_id}"),
+    )
 
 
 @router.callback_query(F.data.startswith("member:mute:"))
-async def cb_member_mute(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
+async def cb_member_mute(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Show confirmation before muting."""
+    await _answer(cb)
+    parts    = cb.data.split(":")
+    group_id = int(parts[2])
+    user_id  = int(parts[3])
+    duration = parts[4] if len(parts) > 4 else "3600"
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    await _edit(
+        cb,
+        S.confirm_mute,
+        reply_markup=confirm_kb(
+            yes_data=f"member:mute_do:{group_id}:{user_id}:{duration}",
+            no_data=f"grp:members:{group_id}",
+        ),
+    )
+
+
+@router.callback_query(F.data.startswith("member:mute_do:"))
+async def cb_member_mute_do(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb, "جارٍ الكتم…")
-    parts = cb.data.split(":")
-    group_id, user_id, duration = int(parts[2]), int(parts[3]), int(parts[4])
+    parts    = cb.data.split(":")
+    group_id = int(parts[2])
+    user_id  = int(parts[3])
+    duration = int(parts[4])
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     success = await mod.mute_user(bot, session, chat_id=group_id, user_id=user_id,
                                    duration_seconds=duration, actor_id=cb.from_user.id)
-    await _edit(cb,
-                S.member_muted if success else S.member_mute_fail,
-                reply_markup=back_kb(f"grp:members:{group_id}"))
+    await _edit(
+        cb,
+        S.member_muted if success else S.member_mute_fail,
+        reply_markup=back_kb(f"grp:members:{group_id}"),
+    )
 
 
 @router.callback_query(F.data.startswith("member:unmute:"))
@@ -560,11 +879,17 @@ async def cb_member_unmute(cb: CallbackQuery, bot: Bot, session: AsyncSession) -
     await _answer(cb, "جارٍ رفع الكتم…")
     _, _, group_id_str, user_id_str = cb.data.split(":")
     group_id, user_id = int(group_id_str), int(user_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     success = await mod.unmute_user(bot, session, chat_id=group_id, user_id=user_id,
                                      actor_id=cb.from_user.id)
-    await _edit(cb,
-                S.member_unmuted if success else S.member_unmute_fail,
-                reply_markup=back_kb(f"grp:members:{group_id}"))
+    await _edit(
+        cb,
+        S.member_unmuted if success else S.member_unmute_fail,
+        reply_markup=back_kb(f"grp:members:{group_id}"),
+    )
 
 
 @router.callback_query(F.data.startswith("member:warn:"))
@@ -572,6 +897,10 @@ async def cb_member_warn(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> 
     await _answer(cb, "جارٍ التحذير…")
     _, _, group_id_str, user_id_str = cb.data.split(":")
     group_id, user_id = int(group_id_str), int(user_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     count, limit, punished = await warn_user(
         bot, session, chat_id=group_id, user_id=user_id, actor_id=cb.from_user.id,
     )
@@ -583,9 +912,33 @@ async def cb_member_warn(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> 
 
 @router.callback_query(F.data.startswith("member:resetwarns:"))
 async def cb_member_resetwarns(cb: CallbackQuery, session: AsyncSession) -> None:
+    """Show confirmation before resetting warnings."""
     await _answer(cb)
     _, _, group_id_str, user_id_str = cb.data.split(":")
     group_id, user_id = int(group_id_str), int(user_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    await _edit(
+        cb,
+        S.confirm_reset,
+        reply_markup=confirm_kb(
+            yes_data=f"member:resetwarns_do:{group_id}:{user_id}",
+            no_data=f"grp:members:{group_id}",
+        ),
+    )
+
+
+@router.callback_query(F.data.startswith("member:resetwarns_do:"))
+async def cb_member_resetwarns_do(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    _, _, group_id_str, user_id_str = cb.data.split(":")
+    group_id, user_id = int(group_id_str), int(user_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
     await repo.reset_warnings(session, group_id, user_id)
     await _edit(cb, S.member_warns_reset, reply_markup=back_kb(f"grp:members:{group_id}"))
 
@@ -596,6 +949,9 @@ async def cb_member_warnhist(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     _, _, group_id_str, user_id_str = cb.data.split(":")
     group_id, user_id = int(group_id_str), int(user_id_str)
+
+    if not await _ensure_authorized(cb, session, group_id):
+        return
 
     history = await repo.get_warning_history(session, group_id, user_id, limit=10)
 
@@ -609,12 +965,10 @@ async def cb_member_warnhist(cb: CallbackQuery, session: AsyncSession) -> None:
 
     lines = [S.warn_history_title]
     for entry in history:
-        ts = format_datetime_ar(entry.created_at)
+        ts     = format_datetime_ar(entry.created_at)
         reason = escape_html(entry.reason or "—")
-        actor = f"<code>{entry.actor_id}</code>" if entry.actor_id else "البوت"
-        lines.append(
-            S.warn_history_entry.format(date=ts, reason=reason, actor=actor)
-        )
+        actor  = f"<code>{entry.actor_id}</code>" if entry.actor_id else "البوت"
+        lines.append(S.warn_history_entry.format(date=ts, reason=reason, actor=actor))
 
     await _edit(cb, "".join(lines), reply_markup=back_kb(f"grp:members:{group_id}"))
 
@@ -627,7 +981,7 @@ async def cb_member_warnhist(cb: CallbackQuery, session: AsyncSession) -> None:
 async def cb_ch_select(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
     channel_id = int(cb.data.split(":")[2])
-    channel = await repo.get_channel(session, channel_id)
+    channel    = await repo.get_channel(session, channel_id)
     if not channel:
         await _edit(cb, S.not_found, reply_markup=back_kb("menu:channels"))
         return

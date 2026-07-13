@@ -41,7 +41,7 @@ async def main() -> None:
     config = load_config()
     setup_logging(config.log_level)
     log = get_logger("main")
-    log.info("Starting Telegram Moderation Bot v2 (Arabic)…")
+    log.info("Starting Telegram Moderation Bot v3 (Professional UX & Security)…")
 
     # ------------------------------------------------------------------
     # Database — create/migrate tables

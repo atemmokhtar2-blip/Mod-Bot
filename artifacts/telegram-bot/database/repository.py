@@ -263,6 +263,30 @@ async def is_admin_in_db(session: AsyncSession, group_id: int, user_id: int) -> 
     return result.scalar_one_or_none() is not None
 
 
+async def is_authorized(session: AsyncSession, group_id: int, user_id: int) -> bool:
+    """V3: True if user is the group owner or a registered bot admin for this group."""
+    group = await session.get(Group, group_id)
+    if group and group.owner_id == user_id:
+        return True
+    return await is_admin_in_db(session, group_id, user_id)
+
+
+async def toggle_all_filters(session: AsyncSession, group_id: int, enabled: bool) -> None:
+    """V3: Enable or disable every filter for a group (master auto-protection switch)."""
+    await session.execute(
+        update(Filter).where(Filter.group_id == group_id).values(enabled=enabled)
+    )
+    await session.commit()
+
+
+async def set_owner(session: AsyncSession, group_id: int, user_id: int) -> None:
+    """V3: Assign a user as the owner of a group (called when they click the deep link)."""
+    await session.execute(
+        update(Group).where(Group.group_id == group_id).values(owner_id=user_id)
+    )
+    await session.commit()
+
+
 # ============================================================
 # Warnings  (counter row)
 # ============================================================

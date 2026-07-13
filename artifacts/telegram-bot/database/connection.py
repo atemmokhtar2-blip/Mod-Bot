@@ -36,9 +36,22 @@ async_session: async_sessionmaker[AsyncSession] = async_sessionmaker(
 
 
 async def init_db() -> None:
-    """Create all tables that do not yet exist."""
+    """Create all tables that do not yet exist, then apply safe column migrations."""
     from database.models import Base  # avoid circular import at module level
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # V3 safe column migrations — ADD COLUMN IF NOT EXISTS is idempotent.
+    migrations = [
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS auto_protect_enabled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE statistics ADD COLUMN IF NOT EXISTS warned_members INTEGER DEFAULT 0",
+    ]
+    async with engine.begin() as conn:
+        for sql in migrations:
+            try:
+                await conn.execute(__import__("sqlalchemy").text(sql))
+            except Exception as exc:
+                log.warning("Migration skipped: %s", exc)
+
     log.info("Database tables initialised.")

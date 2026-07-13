@@ -1,8 +1,9 @@
 """
-Lifecycle event handlers — Arabic UI (V2).
+Lifecycle event handlers — Version 3 (Professional Activation Message).
 
 Events:
   - Bot added to / removed from a group or channel
+  - Bot receives admin permissions → beautiful activation message with deep link
   - New member joins a group (welcome message)
   - Member leaves a group (log)
 
@@ -16,6 +17,7 @@ from aiogram.filters import ChatMemberUpdatedFilter, IS_MEMBER, IS_NOT_MEMBER
 from aiogram.types import ChatMemberUpdated
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.keyboards.builder import manage_group_url_kb
 from bot.services.group_service import (
     deregister_group,
     register_channel,
@@ -43,17 +45,48 @@ async def bot_joined_chat(event: ChatMemberUpdated, bot: Bot, session: AsyncSess
     if chat_type in ("group", "supergroup"):
         await register_group(session, bot, chat.id)
         try:
+            me = await bot.get_me()
             await bot.send_message(
                 chat.id,
-                S.bot_joined_msg,
+                S.bot_activation_msg,
                 parse_mode="HTML",
+                reply_markup=manage_group_url_kb(chat.id, me.username),
             )
         except Exception as exc:
-            log.warning("Could not send welcome to group %s: %s", chat.id, exc)
+            log.warning("Could not send activation message to group %s: %s", chat.id, exc)
 
     elif chat_type == "channel":
         await register_channel(session, bot, chat.id)
         log.info("Bot joined channel %s", chat.id)
+
+
+@router.my_chat_member()
+async def bot_member_status_changed(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
+    """
+    Fired on any status change of the bot in a chat.
+    V3: detect when bot is promoted to administrator mid-session (already a member)
+    and re-send the activation message with the deep link button.
+    """
+    chat = event.chat
+    if chat.type not in ("group", "supergroup"):
+        return
+
+    old_status = event.old_chat_member.status
+    new_status = event.new_chat_member.status
+
+    # Only care about: member/restricted → administrator promotions
+    # (not the IS_NOT_MEMBER >> IS_MEMBER case handled above)
+    if old_status in ("member", "restricted") and new_status == "administrator":
+        try:
+            me = await bot.get_me()
+            await bot.send_message(
+                chat.id,
+                S.bot_activation_msg,
+                parse_mode="HTML",
+                reply_markup=manage_group_url_kb(chat.id, me.username),
+            )
+        except Exception as exc:
+            log.warning("Could not send admin-promotion message in group %s: %s", chat.id, exc)
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(IS_MEMBER >> IS_NOT_MEMBER))

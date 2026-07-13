@@ -168,6 +168,8 @@ class GroupSettings(Base):
     mute_duration: Mapped[int] = mapped_column(Integer, default=3600)
     log_events: Mapped[bool] = mapped_column(Boolean, default=True)
     language: Mapped[str] = mapped_column(String(8), default="ar")
+    # V3: master auto-protection switch — when enabled all key filters are active
+    auto_protect_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     group: Mapped["Group"] = relationship("Group", back_populates="settings")
 
