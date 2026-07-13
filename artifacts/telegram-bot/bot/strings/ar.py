@@ -614,3 +614,43 @@ class S:
     warn_history_title = "📋 <b>سجل التحذيرات</b>\n\n"
     warn_history_none  = "لا توجد تحذيرات مسجّلة."
     warn_history_entry = "• <b>{date}</b> — {reason} (بواسطة {actor})\n"
+
+    # ─── V4.1 Custom Word List commands ───────────────────────────────────────
+    wordlist_addword_usage = (
+        "📝 <b>إضافة كلمة محظورة</b>\n\n"
+        "الاستخدام: <code>/addword كلمة</code>\n\n"
+        "مثال: <code>/addword حمار</code>"
+    )
+    wordlist_removeword_usage = (
+        "🗑️ <b>إزالة كلمة محظورة</b>\n\n"
+        "الاستخدام: <code>/removeword كلمة</code>\n\n"
+        "مثال: <code>/removeword حمار</code>"
+    )
+    wordlist_word_too_short = (
+        "❌ الكلمة قصيرة جداً (أقل من حرفين بعد التطبيع).\n"
+        "أضف كلمة أطول."
+    )
+    wordlist_word_too_long = (
+        "❌ الكلمة طويلة جداً (الحد الأقصى 100 حرف)."
+    )
+    wordlist_limit_reached = (
+        "⚠️ وصلت إلى الحد الأقصى من الكلمات المخصصة (500 كلمة).\n"
+        "احذف بعض الكلمات أولاً."
+    )
+    wordlist_added = "✅ تمت إضافة الكلمة: <code>{word}</code> إلى القائمة المحظورة."
+    wordlist_already_exists = "⚠️ الكلمة <code>{word}</code> موجودة بالفعل في القائمة."
+    wordlist_removed = "✅ تمت إزالة الكلمة: <code>{word}</code> من القائمة المحظورة."
+    wordlist_not_found = "❌ الكلمة <code>{word}</code> غير موجودة في القائمة المخصصة."
+    wordlist_empty = (
+        "📋 قائمة الكلمات المحظورة المخصصة فارغة.\n\n"
+        "أضف كلمات باستخدام: <code>/addword كلمة</code>"
+    )
+    wordlist_list_header = (
+        "════════════════════\n"
+        "📋 <b>الكلمات المحظورة المخصصة</b>\n\n"
+        "إجمالي الكلمات المخصصة: <b>{count}</b>\n"
+        "الكلمات المدمجة (مكتبة البوت): <b>{builtin}</b>\n\n"
+        "قائمة الكلمات المخصصة:\n"
+    )
+    wordlist_list_truncated = "\n<i>… وأكثر من ذلك — يعرض {shown} من {total}</i>"
+    wordlist_cleared = "♻️ تم مسح <b>{count}</b> كلمة مخصصة محظورة."

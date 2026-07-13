@@ -30,6 +30,7 @@ from bot.handlers import (
     callbacks,
 )
 from bot.handlers import v4_settings
+from bot.handlers import wordlist
 from utils.logger import get_logger, setup_logging
 
 
@@ -76,6 +77,7 @@ async def main() -> None:
     dp.include_router(v4_settings.router)   # V4 — registered before callbacks
     dp.include_router(callbacks.router)
     dp.include_router(admin_commands.router)
+    dp.include_router(wordlist.router)      # V4.1 — word-list commands
     dp.include_router(message_filter.router)
 
     # ------------------------------------------------------------------
@@ -96,7 +98,11 @@ async def main() -> None:
         BotCommand(command="del",        description="حذف رسالة (بالرد)"),
         BotCommand(command="pin",        description="تثبيت رسالة (بالرد)"),
         BotCommand(command="unpin",      description="إلغاء التثبيت"),
-        BotCommand(command="info",       description="معلومات المستخدم (بالرد)"),
+        BotCommand(command="info",        description="معلومات المستخدم (بالرد)"),
+        BotCommand(command="addword",     description="إضافة كلمة محظورة [كلمة]"),
+        BotCommand(command="removeword",  description="إزالة كلمة محظورة [كلمة]"),
+        BotCommand(command="listwords",   description="عرض الكلمات المحظورة المخصصة"),
+        BotCommand(command="clearwords",  description="مسح جميع الكلمات المخصصة (المالك فقط)"),
     ]
 
     try:

@@ -1,5 +1,5 @@
 """
-Data-access layer (repository pattern) — Version 4.
+Data-access layer (repository pattern) — Version 4.1.
 All DB reads and writes go through these functions.
 """
 
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import (
     Admin,
     Channel,
+    CustomWord,
     Filter,
     FILTER_TYPES,
     Group,
@@ -466,3 +467,91 @@ async def set_total_members(session: AsyncSession, group_id: int, count: int) ->
     )
     await session.execute(stmt)
     await session.commit()
+
+
+# ============================================================
+# Custom profanity words  — V4.1
+# ============================================================
+
+async def add_custom_word(
+    session: AsyncSession,
+    group_id: int,
+    word_original: str,
+    word_normalized: str,
+    added_by: int | None = None,
+) -> tuple[bool, str]:
+    """
+    Insert a custom word for a group.
+    Returns (success, message_key):
+      success=True  → word added
+      success=False → word already exists (duplicate normalized form)
+    """
+    stmt = pg_insert(CustomWord).values(
+        group_id=group_id,
+        word_original=word_original,
+        word_normalized=word_normalized,
+        added_by=added_by,
+        added_at=datetime.now(timezone.utc),
+    ).on_conflict_do_nothing(
+        index_elements=["group_id", "word_normalized"]
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    added = (result.rowcount or 0) > 0
+    return added, "added" if added else "duplicate"
+
+
+async def remove_custom_word(
+    session: AsyncSession,
+    group_id: int,
+    word_normalized: str,
+) -> bool:
+    """Remove a custom word by its normalized form. Returns True if deleted."""
+    result = await session.execute(
+        delete(CustomWord).where(
+            CustomWord.group_id == group_id,
+            CustomWord.word_normalized == word_normalized,
+        )
+    )
+    await session.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def get_custom_words(
+    session: AsyncSession,
+    group_id: int,
+) -> list[CustomWord]:
+    """Return all custom words for a group, ordered by addition time."""
+    result = await session.execute(
+        select(CustomWord)
+        .where(CustomWord.group_id == group_id)
+        .order_by(CustomWord.added_at.asc())
+    )
+    return result.scalars().all()
+
+
+async def get_custom_word_strings(
+    session: AsyncSession,
+    group_id: int,
+) -> list[str]:
+    """Return just the raw word strings (original form) for engine use."""
+    rows = await get_custom_words(session, group_id)
+    return [r.word_original for r in rows]
+
+
+async def clear_custom_words(session: AsyncSession, group_id: int) -> int:
+    """Delete all custom words for a group. Returns count deleted."""
+    result = await session.execute(
+        delete(CustomWord).where(CustomWord.group_id == group_id)
+    )
+    await session.commit()
+    return result.rowcount or 0
+
+
+async def count_custom_words(session: AsyncSession, group_id: int) -> int:
+    """Return the count of custom words for a group."""
+    from sqlalchemy import func
+    result = await session.execute(
+        select(func.count()).select_from(CustomWord).where(CustomWord.group_id == group_id)
+    )
+    return result.scalar_one() or 0

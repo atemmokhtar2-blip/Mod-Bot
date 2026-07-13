@@ -371,3 +371,31 @@ class Statistic(Base):
     muted_members: Mapped[int] = mapped_column(Integer, default=0)
     banned_members: Mapped[int] = mapped_column(Integer, default=0)
     warned_members: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# ---------------------------------------------------------------------------
+# custom_words  — V4.1: per-group custom profanity list
+# ---------------------------------------------------------------------------
+
+class CustomWord(Base):
+    """
+    One row per custom blocked word/phrase for a specific group.
+    The engine stores both the raw original (for display) and the normalized
+    form (for dedup checks so the same word added twice is caught early).
+    """
+    __tablename__ = "custom_words"
+    __table_args__ = (
+        UniqueConstraint("group_id", "word_normalized"),
+        Index("ix_custom_words_group", "group_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("groups.group_id", ondelete="CASCADE")
+    )
+    word_original: Mapped[str] = mapped_column(String(256))
+    word_normalized: Mapped[str] = mapped_column(String(256))
+    added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )

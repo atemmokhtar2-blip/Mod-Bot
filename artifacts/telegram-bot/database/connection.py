@@ -82,6 +82,20 @@ async def init_db() -> None:
         "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_warn BOOLEAN DEFAULT TRUE",
         "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_edit_settings BOOLEAN DEFAULT FALSE",
         "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_manage_admins BOOLEAN DEFAULT FALSE",
+
+        # V4.1: Custom profanity word list
+        """
+        CREATE TABLE IF NOT EXISTS custom_words (
+            id               SERIAL PRIMARY KEY,
+            group_id         BIGINT NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
+            word_original    VARCHAR(256) NOT NULL,
+            word_normalized  VARCHAR(256) NOT NULL,
+            added_by         BIGINT,
+            added_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_custom_words_group_norm UNIQUE (group_id, word_normalized)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_custom_words_group ON custom_words (group_id)",
     ]
 
     async with engine.begin() as conn:
@@ -91,4 +105,4 @@ async def init_db() -> None:
             except Exception as exc:
                 log.warning("Migration skipped: %s", exc)
 
-    log.info("Database tables initialised (V4).")
+    log.info("Database tables initialised (V4.1).")
