@@ -25,6 +25,7 @@ from bot.handlers import (
 )
 from bot.handlers import v4_settings
 from bot.handlers import wordlist
+from bot.handlers import donations
 
 
 def create_bot(cfg: Config) -> Bot:
@@ -44,9 +45,10 @@ def create_dispatcher() -> Dispatcher:
       2. /start — private dashboard
       3. V4 settings callbacks (must precede generic callbacks)
       4. Generic inline-button callbacks
-      5. Admin text commands (/ban, /mute, …)
-      6. V4.1 word-list commands (/addword, …)
-      7. Message filter — catches everything else (last)
+      5. V5 donations (Telegram Stars) — pre_checkout_query / successful_payment
+      6. Admin text commands (/ban, /mute, …)
+      7. V4.1 word-list commands (/addword, …)
+      8. Message filter — catches everything else (last)
     """
     dp = Dispatcher(storage=MemoryStorage())
     dp.update.middleware(DbSessionMiddleware())
@@ -55,6 +57,7 @@ def create_dispatcher() -> Dispatcher:
     dp.include_router(start.router)
     dp.include_router(v4_settings.router)
     dp.include_router(callbacks.router)
+    dp.include_router(donations.router)
     dp.include_router(admin_commands.router)
     dp.include_router(wordlist.router)
     dp.include_router(message_filter.router)

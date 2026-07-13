@@ -1,1 +1,2 @@
 - [Replit asyncpg SSL](asyncpg-ssl.md) — Replit internal Postgres rejects SSL; asyncpg also rejects sslmode URL param; requires specific fix pattern.
+- [Telegram Stars donations](telegram-stars-donations.md) — XTR payments need empty provider_token; only successful_payment message proves payment, no native cancel event.

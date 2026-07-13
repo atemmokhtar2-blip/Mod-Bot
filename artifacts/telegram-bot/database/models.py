@@ -399,3 +399,31 @@ class CustomWord(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )
+
+
+# ---------------------------------------------------------------------------
+# donations  — V5: Telegram Stars donations
+# ---------------------------------------------------------------------------
+
+DONATION_STATUSES = ["pending", "paid", "failed"]
+
+
+class Donation(Base):
+    """One row per Telegram Stars donation attempt/payment."""
+    __tablename__ = "donations"
+    __table_args__ = (
+        Index("ix_donations_user", "user_id"),
+        Index("ix_donations_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    amount: Mapped[int] = mapped_column(Integer)  # amount in Telegram Stars (XTR)
+    currency: Mapped[str] = mapped_column(String(8), default="XTR")
+    payload: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    telegram_charge_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    provider_charge_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )

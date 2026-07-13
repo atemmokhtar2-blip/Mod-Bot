@@ -72,6 +72,11 @@ class S:
     btn_help       = "❓ المساعدة"
     btn_back       = "⬅️ رجوع"
 
+    # ─── V5: Updates channel & Donations ─────────────────────────────────────
+    btn_updates_channel  = "📢 قناة التحديثات"
+    updates_channel_url  = "https://t.me/h7h7h7Updates"
+    btn_donate           = "💎 دعم المشروع"
+
     btn_stats = "📊 الإحصائيات"
     btn_logs  = "📜 السجل"
 
@@ -654,3 +659,37 @@ class S:
     )
     wordlist_list_truncated = "\n<i>… وأكثر من ذلك — يعرض {shown} من {total}</i>"
     wordlist_cleared = "♻️ تم مسح <b>{count}</b> كلمة مخصصة محظورة."
+
+    # ─── V5: Donations (Telegram Stars ⭐) ──────────────────────────────────────
+    donate_title = (
+        "════════════════════\n"
+        "💎 <b>دعم المشروع</b>\n\n"
+        "مساهمتك تساعدنا على الاستمرار في تطوير البوت وإضافة مميزات جديدة! 🚀\n\n"
+        "اختر عدد نجوم تيليغرام ⭐ التي تريد التبرع بها، أو اضغط إلغاء:\n"
+        "════════════════════"
+    )
+    btn_donate_amount   = "⭐ {amount}"
+    btn_donate_cancel   = "❌ إلغاء"
+
+    donate_cancelled = (
+        "════════════════════\n"
+        "❌ <b>تم إلغاء عملية الدعم</b>\n\n"
+        "لا بأس، يمكنك دعم المشروع في أي وقت تريده! 💙\n"
+        "════════════════════"
+    )
+
+    donate_invoice_title       = "دعم مشروع بوت الإدارة 💎"
+    donate_invoice_description = "شكراً لدعمك! تبرعك بـ {amount} ⭐ يساهم في استمرار تطوير البوت وتحسينه."
+    donate_invoice_label       = "دعم المشروع ({amount} ⭐)"
+    donate_invoice_failed      = "❌ تعذّر إنشاء فاتورة الدعم. حاول مرة أخرى لاحقاً."
+
+    donate_precheckout_ok = "✅"
+
+    donate_thanks = (
+        "════════════════════\n"
+        "🎉 <b>شكراً لدعمك الكريم!</b>\n\n"
+        "تم استلام تبرعك بمقدار <b>{amount} ⭐</b> بنجاح.\n"
+        "دعمك يساهم في استمرار المشروع وتطويره باستمرار. 💙\n\n"
+        "🙏 نقدّر ثقتك بنا.\n"
+        "════════════════════"
+    )

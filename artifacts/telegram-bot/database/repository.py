@@ -16,6 +16,7 @@ from database.models import (
     Admin,
     Channel,
     CustomWord,
+    Donation,
     Filter,
     FILTER_TYPES,
     Group,
@@ -555,3 +556,56 @@ async def count_custom_words(session: AsyncSession, group_id: int) -> int:
         select(func.count()).select_from(CustomWord).where(CustomWord.group_id == group_id)
     )
     return result.scalar_one() or 0
+
+
+# ============================================================
+# Donations (Telegram Stars) — V5
+# ============================================================
+
+async def create_pending_donation(
+    session: AsyncSession, *, user_id: int, amount: int, payload: str, currency: str = "XTR",
+) -> Donation:
+    """Record a donation attempt before the invoice is paid."""
+    donation = Donation(user_id=user_id, amount=amount, payload=payload,
+                        currency=currency, status="pending")
+    session.add(donation)
+    await session.commit()
+    return donation
+
+
+async def mark_donation_paid(
+    session: AsyncSession, *, payload: str, telegram_charge_id: str,
+    provider_charge_id: str | None = None,
+) -> Donation | None:
+    """Mark the donation matching *payload* as paid, recording Telegram's charge ids."""
+    result = await session.execute(
+        select(Donation).where(Donation.payload == payload).order_by(Donation.id.desc())
+    )
+    donation = result.scalars().first()
+    if not donation:
+        return None
+    donation.status = "paid"
+    donation.telegram_charge_id = telegram_charge_id
+    donation.provider_charge_id = provider_charge_id
+    await session.commit()
+    return donation
+
+
+async def get_total_donated(session: AsyncSession, user_id: int) -> int:
+    """Sum of all paid donation amounts (in Stars) for a user."""
+    from sqlalchemy import func
+    result = await session.execute(
+        select(func.coalesce(func.sum(Donation.amount), 0))
+        .where(Donation.user_id == user_id, Donation.status == "paid")
+    )
+    return int(result.scalar_one() or 0)
+
+
+async def count_donations(session: AsyncSession, user_id: int) -> int:
+    """Count of paid donations for a user."""
+    from sqlalchemy import func
+    result = await session.execute(
+        select(func.count()).select_from(Donation)
+        .where(Donation.user_id == user_id, Donation.status == "paid")
+    )
+    return int(result.scalar_one() or 0)

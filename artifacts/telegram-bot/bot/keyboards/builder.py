@@ -45,24 +45,36 @@ def manage_group_url_kb(group_id: int, bot_username: str) -> InlineKeyboardMarku
 # ---------------------------------------------------------------------------
 
 def main_menu_kb(groups: list[Group], active_group_id: int | None = None) -> InlineKeyboardMarkup:
+    """V5 main dashboard — full menu with updates channel & donations."""
     builder = InlineKeyboardBuilder()
+    rows: list[int] = []
 
     if groups:
         if len(groups) > 1:
             builder.button(text=f"📋 مجموعاتي ({len(groups)})", callback_data="menu:groups")
-            builder.adjust(1)
+            rows.append(1)
         gid = active_group_id or groups[0].group_id
-        builder.button(text=S.btn_protection, callback_data=f"prot:menu:{gid}")
-        builder.button(text=S.btn_members,    callback_data=f"grp:members:{gid}")
-        builder.button(text=S.btn_admins,     callback_data=f"grp:admins:{gid}")
-        builder.button(text=S.btn_channels,   callback_data="menu:channels")
-        builder.button(text=S.btn_settings,   callback_data=f"grp:settings:{gid}")
-        builder.button(text=S.btn_help,       callback_data="menu:help")
-        builder.adjust(2, 2, 2, 1)
+        builder.button(text=S.btn_home,        callback_data="menu:home")
+        builder.button(text=S.btn_protection,  callback_data=f"prot:menu:{gid}")
+        builder.button(text=S.btn_members,     callback_data=f"grp:members:{gid}")
+        builder.button(text=S.btn_admins,      callback_data=f"grp:admins:{gid}")
+        builder.button(text=S.btn_channels,    callback_data="menu:channels")
+        builder.button(text=S.btn_settings,    callback_data=f"grp:settings:{gid}")
+        rows.append(2)
+        rows.append(2)
+        rows.append(2)
     else:
-        builder.button(text=S.btn_help, callback_data="menu:help")
-        builder.adjust(1)
+        builder.button(text=S.btn_home, callback_data="menu:home")
+        rows.append(1)
 
+    builder.button(text=S.btn_updates_channel, url=S.updates_channel_url)
+    builder.button(text=S.btn_donate,          callback_data="donate:menu")
+    rows.append(2)
+
+    builder.button(text=S.btn_help, callback_data="menu:help")
+    rows.append(1)
+
+    builder.adjust(*rows)
     return builder.as_markup()
 
 
@@ -607,4 +619,24 @@ def v4_reset_confirm_kb(group_id: int) -> InlineKeyboardMarkup:
     builder.button(text="✅ نعم، إعادة الضبط", callback_data=f"v4s:reset_confirm:{group_id}")
     builder.button(text="❌ إلغاء",             callback_data=f"v4s:menu:{group_id}")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+# ===========================================================================
+# V5 Keyboards — Telegram Stars Donations
+# ===========================================================================
+
+DONATION_AMOUNTS = [25, 50, 100, 250, 500, 1000]
+
+
+def donate_amounts_kb() -> InlineKeyboardMarkup:
+    """Preset Telegram Stars amounts + a cancel button."""
+    builder = InlineKeyboardBuilder()
+    for amount in DONATION_AMOUNTS:
+        builder.button(
+            text=S.btn_donate_amount.format(amount=amount),
+            callback_data=f"donate:pay:{amount}",
+        )
+    builder.row(InlineKeyboardButton(text=S.btn_donate_cancel, callback_data="donate:cancel"))
+    builder.adjust(3, 3, 1)
     return builder.as_markup()

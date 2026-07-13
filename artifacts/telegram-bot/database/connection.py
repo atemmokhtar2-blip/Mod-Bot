@@ -96,6 +96,23 @@ async def init_db() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS ix_custom_words_group ON custom_words (group_id)",
+
+        # V5: Telegram Stars donations
+        """
+        CREATE TABLE IF NOT EXISTS donations (
+            id                   SERIAL PRIMARY KEY,
+            user_id              BIGINT NOT NULL,
+            amount               INTEGER NOT NULL,
+            currency             VARCHAR(8) NOT NULL DEFAULT 'XTR',
+            payload              VARCHAR(128) NOT NULL,
+            status               VARCHAR(16) NOT NULL DEFAULT 'pending',
+            telegram_charge_id   VARCHAR(128),
+            provider_charge_id   VARCHAR(128),
+            created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_donations_user ON donations (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_donations_created ON donations (created_at)",
     ]
 
     async with engine.begin() as conn:
@@ -105,4 +122,4 @@ async def init_db() -> None:
             except Exception as exc:
                 log.warning("Migration skipped: %s", exc)
 
-    log.info("Database tables initialised (V4.1).")
+    log.info("Database tables initialised (V5).")
