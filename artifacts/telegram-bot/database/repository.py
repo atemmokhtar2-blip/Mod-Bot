@@ -1,9 +1,6 @@
 """
-Data-access layer (repository pattern) — Version 2.
+Data-access layer (repository pattern) — Version 4.
 All DB reads and writes go through these functions.
-Handlers and services must NOT build ORM queries directly.
-
-Future: caching layer (Redis), pagination helpers, bulk-insert optimisations.
 """
 
 from __future__ import annotations
@@ -179,6 +176,51 @@ async def update_settings(session: AsyncSession, group_id: int, **kwargs) -> Non
     await session.commit()
 
 
+async def reset_group_settings(session: AsyncSession, group_id: int) -> None:
+    """V4: Reset all group settings to defaults and disable all filters."""
+    defaults = GroupSettings()  # get default values from model
+    await session.execute(
+        update(GroupSettings).where(GroupSettings.group_id == group_id).values(
+            welcome_enabled=False,
+            welcome_text="أهلاً وسهلاً {first_name}! 👋 يرجى قراءة قواعد المجموعة.",
+            goodbye_enabled=False,
+            goodbye_text="وداعاً {first_name}! 👋 نتمنى لك التوفيق.",
+            warning_limit=3,
+            auto_punishment="mute",
+            mute_duration=3600,
+            log_events=True,
+            language="ar",
+            auto_protect_enabled=False,
+            lock_photos=False,
+            lock_video=False,
+            lock_audio=False,
+            lock_documents=False,
+            lock_stickers=False,
+            lock_gifs=False,
+            lock_polls=False,
+            lock_locations=False,
+            lock_voice=False,
+            perm_delete=True,
+            perm_ban=True,
+            perm_unban=True,
+            perm_mute=True,
+            perm_unmute=True,
+            perm_pin=True,
+            perm_unpin=True,
+            perm_warn=True,
+            perm_edit_settings=False,
+            perm_manage_admins=False,
+        )
+    )
+    # Disable all filters
+    await session.execute(
+        update(Filter).where(Filter.group_id == group_id).values(
+            enabled=False, action="delete"
+        )
+    )
+    await session.commit()
+
+
 # ============================================================
 # Filters
 # ============================================================
@@ -264,15 +306,21 @@ async def is_admin_in_db(session: AsyncSession, group_id: int, user_id: int) -> 
 
 
 async def is_authorized(session: AsyncSession, group_id: int, user_id: int) -> bool:
-    """V3: True if user is the group owner or a registered bot admin for this group."""
+    """True if user is the group owner or a registered bot admin for this group."""
     group = await session.get(Group, group_id)
     if group and group.owner_id == user_id:
         return True
     return await is_admin_in_db(session, group_id, user_id)
 
 
+async def is_owner(session: AsyncSession, group_id: int, user_id: int) -> bool:
+    """V4: True only if user is the group owner."""
+    group = await session.get(Group, group_id)
+    return bool(group and group.owner_id == user_id)
+
+
 async def toggle_all_filters(session: AsyncSession, group_id: int, enabled: bool) -> None:
-    """V3: Enable or disable every filter for a group (master auto-protection switch)."""
+    """Enable or disable every filter for a group (master auto-protection switch)."""
     await session.execute(
         update(Filter).where(Filter.group_id == group_id).values(enabled=enabled)
     )
@@ -280,7 +328,7 @@ async def toggle_all_filters(session: AsyncSession, group_id: int, enabled: bool
 
 
 async def set_owner(session: AsyncSession, group_id: int, user_id: int) -> None:
-    """V3: Assign a user as the owner of a group (called when they click the deep link)."""
+    """Assign a user as the owner of a group (called when they click the deep link)."""
     await session.execute(
         update(Group).where(Group.group_id == group_id).values(owner_id=user_id)
     )
@@ -317,7 +365,6 @@ async def add_warning(session: AsyncSession, group_id: int, user_id: int,
         session.add(Warning(group_id=group_id, user_id=user_id, count=1,
                             last_reason=reason, last_warned_at=now))
 
-    # V2: always record an individual history entry
     session.add(WarningHistory(
         group_id=group_id,
         user_id=user_id,
@@ -342,7 +389,6 @@ async def reset_warnings(session: AsyncSession, group_id: int, user_id: int) -> 
 
 async def get_warning_history(session: AsyncSession, group_id: int, user_id: int,
                                limit: int = 10) -> list[WarningHistory]:
-    """Return the most recent warning history entries for a user in a group."""
     result = await session.execute(
         select(WarningHistory)
         .where(WarningHistory.group_id == group_id, WarningHistory.user_id == user_id)

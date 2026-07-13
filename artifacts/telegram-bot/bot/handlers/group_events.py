@@ -1,13 +1,11 @@
 """
-Lifecycle event handlers — Version 3 (Professional Activation Message).
+Lifecycle event handlers — Version 4 (Goodbye message support).
 
 Events:
   - Bot added to / removed from a group or channel
   - Bot receives admin permissions → beautiful activation message with deep link
   - New member joins a group (welcome message)
-  - Member leaves a group (log)
-
-Future: anti-raid join throttling, CAPTCHA verification.
+  - Member leaves a group (goodbye message + log)  ← V4
 """
 
 from __future__ import annotations
@@ -38,7 +36,6 @@ router = Router(name="group_events")
 
 @router.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> IS_MEMBER))
 async def bot_joined_chat(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
-    """Fired when the bot itself joins a group or channel."""
     chat = event.chat
     chat_type = chat.type
 
@@ -62,11 +59,6 @@ async def bot_joined_chat(event: ChatMemberUpdated, bot: Bot, session: AsyncSess
 
 @router.my_chat_member()
 async def bot_member_status_changed(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
-    """
-    Fired on any status change of the bot in a chat.
-    V3: detect when bot is promoted to administrator mid-session (already a member)
-    and re-send the activation message with the deep link button.
-    """
     chat = event.chat
     if chat.type not in ("group", "supergroup"):
         return
@@ -74,8 +66,6 @@ async def bot_member_status_changed(event: ChatMemberUpdated, bot: Bot, session:
     old_status = event.old_chat_member.status
     new_status = event.new_chat_member.status
 
-    # Only care about: member/restricted → administrator promotions
-    # (not the IS_NOT_MEMBER >> IS_MEMBER case handled above)
     if old_status in ("member", "restricted") and new_status == "administrator":
         try:
             me = await bot.get_me()
@@ -91,7 +81,6 @@ async def bot_member_status_changed(event: ChatMemberUpdated, bot: Bot, session:
 
 @router.my_chat_member(ChatMemberUpdatedFilter(IS_MEMBER >> IS_NOT_MEMBER))
 async def bot_left_chat(event: ChatMemberUpdated, session: AsyncSession) -> None:
-    """Fired when the bot is removed from a group."""
     chat = event.chat
     if chat.type in ("group", "supergroup"):
         await deregister_group(session, chat.id)
@@ -148,19 +137,41 @@ async def new_member_joined(event: ChatMemberUpdated, bot: Bot, session: AsyncSe
 
 
 # ---------------------------------------------------------------------------
-# Member leaves
+# Member leaves  — V4: goodbye message
 # ---------------------------------------------------------------------------
 
 @router.chat_member(ChatMemberUpdatedFilter(IS_MEMBER >> IS_NOT_MEMBER))
-async def member_left(event: ChatMemberUpdated, session: AsyncSession) -> None:
+async def member_left(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
     user = event.old_chat_member.user
+    chat_id = event.chat.id
+
     if user.is_bot:
         return
 
     await repo.add_log(
         session,
-        group_id=event.chat.id,
+        group_id=chat_id,
         event_type="user_left",
         target_id=user.id,
         details=f"غادر {user.first_name}",
     )
+
+    # V4: send goodbye message if enabled
+    settings = await repo.get_settings(session, chat_id)
+    if settings and settings.goodbye_enabled:
+        try:
+            chat = await bot.get_chat(chat_id)
+            text = format_welcome(
+                settings.goodbye_text,
+                first_name=user.first_name,
+                username=user.username,
+                group_name=chat.title or "",
+            )
+            mention = mention_html(user.id, user.first_name)
+            await bot.send_message(
+                chat_id,
+                f"{mention}، {text}",
+                parse_mode="HTML",
+            )
+        except Exception as exc:
+            log.warning("Goodbye message failed in %s: %s", chat_id, exc)

@@ -1,7 +1,7 @@
 """
 Database connection and session management.
 Uses SQLAlchemy 2.x async engine + session factory.
-Future: read-replica support, connection pooling tuning, pgBouncer.
+V4: Extended migrations for new GroupSettings columns.
 """
 
 import os
@@ -29,10 +29,10 @@ _ssl = True if _ssl_env == "true" else None
 
 engine: AsyncEngine = create_async_engine(
     _config.database_url,
-    echo=False,          # set True for SQL query logging in dev
+    echo=False,
     pool_size=10,
     max_overflow=20,
-    pool_pre_ping=True,  # detect stale connections
+    pool_pre_ping=True,
     connect_args={"ssl": _ssl},
 )
 
@@ -50,11 +50,40 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # V3 safe column migrations — ADD COLUMN IF NOT EXISTS is idempotent.
+    # All migrations use ADD COLUMN IF NOT EXISTS — idempotent on every restart.
     migrations = [
+        # V3 migrations
         "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS auto_protect_enabled BOOLEAN DEFAULT FALSE",
         "ALTER TABLE statistics ADD COLUMN IF NOT EXISTS warned_members INTEGER DEFAULT 0",
+
+        # V4: Goodbye message
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS goodbye_enabled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS goodbye_text TEXT DEFAULT 'وداعاً {first_name}! 👋 نتمنى لك التوفيق.'",
+
+        # V4: Media locks
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_photos BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_video BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_audio BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_documents BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_stickers BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_gifs BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_polls BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_locations BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS lock_voice BOOLEAN DEFAULT FALSE",
+
+        # V4: Admin permission defaults
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_delete BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_ban BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_unban BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_mute BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_unmute BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_pin BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_unpin BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_warn BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_edit_settings BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS perm_manage_admins BOOLEAN DEFAULT FALSE",
     ]
+
     async with engine.begin() as conn:
         for sql in migrations:
             try:
@@ -62,4 +91,4 @@ async def init_db() -> None:
             except Exception as exc:
                 log.warning("Migration skipped: %s", exc)
 
-    log.info("Database tables initialised.")
+    log.info("Database tables initialised (V4).")

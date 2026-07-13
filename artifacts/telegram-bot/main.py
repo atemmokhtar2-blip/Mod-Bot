@@ -1,16 +1,14 @@
 """
-Entry point — Version 2 (Arabic UI).
+Entry point — Version 4 (Advanced Settings & Administration).
 
 Boot sequence
 -------------
 1. Load config from environment variables
 2. Set up logging
-3. Initialise the database (create new tables, indexes)
+3. Initialise the database (create/migrate tables)
 4. Build Bot + Dispatcher
 5. Register middleware, routers, commands (Arabic labels)
 6. Start long-polling
-
-Future: swap long-polling for webhook in production.
 """
 
 import asyncio
@@ -31,6 +29,7 @@ from bot.handlers import (
     admin_commands,
     callbacks,
 )
+from bot.handlers import v4_settings
 from utils.logger import get_logger, setup_logging
 
 
@@ -41,7 +40,7 @@ async def main() -> None:
     config = load_config()
     setup_logging(config.log_level)
     log = get_logger("main")
-    log.info("Starting Telegram Moderation Bot v3 (Professional UX & Security)…")
+    log.info("Starting Telegram Moderation Bot v4 (Advanced Settings & Administration)…")
 
     # ------------------------------------------------------------------
     # Database — create/migrate tables
@@ -56,8 +55,6 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
-    # MemoryStorage for FSM (welcome/warn-limit editing wizard).
-    # Future: RedisStorage for multi-worker / persistent FSM.
     dp = Dispatcher(storage=MemoryStorage())
 
     # ------------------------------------------------------------------
@@ -69,12 +66,14 @@ async def main() -> None:
     # Routers — order matters:
     #   1. Lifecycle events (bot joins/leaves, member joins/leaves)
     #   2. Private-chat dashboard (/start)
-    #   3. Callback queries (inline buttons)
-    #   4. Admin commands (in-group text commands)
-    #   5. Message filter (last — catches everything else)
+    #   3. V4 Settings callbacks (before generic callbacks)
+    #   4. Generic callback queries (inline buttons)
+    #   5. Admin commands (in-group text commands)
+    #   6. Message filter (last — catches everything else)
     # ------------------------------------------------------------------
     dp.include_router(group_events.router)
     dp.include_router(start.router)
+    dp.include_router(v4_settings.router)   # V4 — registered before callbacks
     dp.include_router(callbacks.router)
     dp.include_router(admin_commands.router)
     dp.include_router(message_filter.router)

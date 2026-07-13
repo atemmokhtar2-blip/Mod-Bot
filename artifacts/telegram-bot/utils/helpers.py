@@ -201,13 +201,24 @@ def escape_html(text: str) -> str:
 
 
 def format_welcome(template: str, *, first_name: str, username: str | None, group_name: str) -> str:
-    """Substitute placeholders in a welcome message template."""
+    """Substitute placeholders in a welcome/goodbye message template.
+
+    Supports both legacy English keys and V4 Arabic keys:
+      {first_name} / {الاسم}
+      {username}   / {اسم_المستخدم}
+      {group_name} / {اسم_المجموعة}
+    """
     uname = f"@{username}" if username else first_name
     return (
         template
+        # English placeholders (legacy)
         .replace("{first_name}", escape_html(first_name))
-        .replace("{username}", escape_html(uname))
+        .replace("{username}",   escape_html(uname))
         .replace("{group_name}", escape_html(group_name))
+        # Arabic placeholders (V4)
+        .replace("{الاسم}",          escape_html(first_name))
+        .replace("{اسم_المستخدم}",   escape_html(uname))
+        .replace("{اسم_المجموعة}",   escape_html(group_name))
     )
 
 

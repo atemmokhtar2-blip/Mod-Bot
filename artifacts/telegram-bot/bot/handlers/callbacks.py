@@ -235,22 +235,22 @@ async def cb_grp_mod(cb: CallbackQuery, session: AsyncSession) -> None:
 
 @router.callback_query(F.data.startswith("grp:settings:"))
 async def cb_grp_settings(cb: CallbackQuery, session: AsyncSession) -> None:
+    """V4: redirect to the Advanced Settings Center."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
 
     if not await _ensure_authorized(cb, session, group_id):
         return
 
-    group    = await repo.get_group(session, group_id)
-    settings = await repo.get_settings(session, group_id)
-    if not settings:
-        await _edit(cb, S.not_found, reply_markup=back_kb(f"grp:panel:{group_id}"))
-        return
+    # Delegate to V4 settings menu — reuse its rendering directly
+    from bot.keyboards.builder import v4_settings_menu_kb
+
+    group = await repo.get_group(session, group_id)
     title = escape_html(group.title) if group else str(group_id)
     await _edit(
         cb,
-        S.settings_title.format(title=title),
-        reply_markup=settings_menu_kb(group_id, settings.welcome_enabled, settings.log_events),
+        S.v4_settings_title.format(title=title),
+        reply_markup=v4_settings_menu_kb(group_id),
     )
 
 

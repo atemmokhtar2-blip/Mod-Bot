@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models — Version 2.
+SQLAlchemy ORM models — Version 4 (Advanced Settings & Administration).
 
 Tables
 ------
@@ -14,8 +14,10 @@ warning_history – Individual warning events (V2: full history)
 logs            – Audit log of moderation events
 statistics      – Daily counters per group
 
-Future: plugin_data (JSONB), premium_subscriptions, scheduled_posts,
-        ai_moderation_decisions.
+V4 additions
+------------
+GroupSettings: goodbye_enabled/text, media locks (9), admin permissions (10)
+FILTER_TYPES: forwarded, mass_mention, hashtag (3 new)
 """
 
 from datetime import datetime, timezone
@@ -148,7 +150,7 @@ class Admin(Base):
 
 
 # ---------------------------------------------------------------------------
-# group_settings
+# group_settings  — V4 expanded
 # ---------------------------------------------------------------------------
 
 class GroupSettings(Base):
@@ -157,25 +159,61 @@ class GroupSettings(Base):
     group_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("groups.group_id", ondelete="CASCADE"), primary_key=True
     )
+
+    # ── Welcome / Goodbye ────────────────────────────────────────────────────
     welcome_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     welcome_text: Mapped[str] = mapped_column(
         Text,
         default="أهلاً وسهلاً {first_name}! 👋 يرجى قراءة قواعد المجموعة.",
     )
+    # V4
+    goodbye_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    goodbye_text: Mapped[str] = mapped_column(
+        Text,
+        default="وداعاً {first_name}! 👋 نتمنى لك التوفيق.",
+    )
+
+    # ── Warnings / Punishment ────────────────────────────────────────────────
     warning_limit: Mapped[int] = mapped_column(Integer, default=3)
     # Action after warning_limit reached: mute | kick | ban
     auto_punishment: Mapped[str] = mapped_column(String(16), default="mute")
     mute_duration: Mapped[int] = mapped_column(Integer, default=3600)
+
+    # ── Logging / Language ───────────────────────────────────────────────────
     log_events: Mapped[bool] = mapped_column(Boolean, default=True)
     language: Mapped[str] = mapped_column(String(8), default="ar")
-    # V3: master auto-protection switch — when enabled all key filters are active
+
+    # ── Auto-protection master switch (V3) ───────────────────────────────────
     auto_protect_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # ── Media locks (V4) — each locks that media type in the group ───────────
+    lock_photos: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_video: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_audio: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_documents: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_stickers: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_gifs: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_polls: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_locations: Mapped[bool] = mapped_column(Boolean, default=False)
+    lock_voice: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # ── Admin permission defaults (V4) — what bot-admins may do ─────────────
+    perm_delete: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_ban: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_unban: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_mute: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_unmute: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_pin: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_unpin: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_warn: Mapped[bool] = mapped_column(Boolean, default=True)
+    perm_edit_settings: Mapped[bool] = mapped_column(Boolean, default=False)
+    perm_manage_admins: Mapped[bool] = mapped_column(Boolean, default=False)
 
     group: Mapped["Group"] = relationship("Group", back_populates="settings")
 
 
 # ---------------------------------------------------------------------------
-# filters
+# filters  — V4 adds forwarded, mass_mention, hashtag
 # ---------------------------------------------------------------------------
 
 FILTER_TYPES = [
@@ -190,6 +228,10 @@ FILTER_TYPES = [
     "excessive_emojis",
     "repeated_chars",
     "long_messages",
+    # V4
+    "forwarded",
+    "mass_mention",
+    "hashtag",
 ]
 
 FILTER_ACTIONS = ["ignore", "delete", "warn", "mute", "kick", "ban"]
@@ -258,7 +300,7 @@ class WarningHistory(Base):
     user_id: Mapped[int] = mapped_column(BigInteger)
     actor_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    count_at_time: Mapped[int] = mapped_column(Integer, default=1)  # counter value when issued
+    count_at_time: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )
@@ -328,4 +370,4 @@ class Statistic(Base):
     deleted_messages: Mapped[int] = mapped_column(Integer, default=0)
     muted_members: Mapped[int] = mapped_column(Integer, default=0)
     banned_members: Mapped[int] = mapped_column(Integer, default=0)
-    warned_members: Mapped[int] = mapped_column(Integer, default=0)  # V2: track warnings too
+    warned_members: Mapped[int] = mapped_column(Integer, default=0)

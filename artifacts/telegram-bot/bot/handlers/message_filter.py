@@ -1,15 +1,14 @@
 """
-Automatic moderation filter — Version 2 (Arabic notifications, smart detection).
+Automatic moderation filter — Version 4 (Media locks + 3 new filter types).
 
-Improvements over V1:
-- Smart bad-word detection: normalizes Arabic text to defeat bypass tricks
-  (spaces, symbols, repeated letters, diacritics, alef variants).
-- Arabic notification messages pulled from S (strings module).
-- Flood and duplicate windows read from config rather than hard-coded.
-- warn_members stat incremented via warning_service.
+V4 additions
+------------
+- Media locks: delete photos/video/audio/documents/stickers/gifs/polls/locations/voice
+  when the corresponding lock_* flag is set in GroupSettings.
+- New filter types: forwarded, mass_mention, hashtag
+- Detection helpers for the 3 new filters.
 
-In-memory rate tracking resets on restart — intentional for V1/V2 simplicity.
-Future: move flood state to Redis, plug AI classifier for spam/insults.
+Existing logic preserved verbatim; new checks appended at the end.
 """
 
 from __future__ import annotations
@@ -53,7 +52,6 @@ _last_message: dict[tuple[int, int], tuple[str, float]] = {}
 
 async def _notify(bot: Bot, chat_id: int, template: str,
                   user_id: int, name: str) -> None:
-    """Send a short Arabic notification to the group (silent fail)."""
     try:
         await bot.send_message(
             chat_id,
@@ -78,7 +76,7 @@ async def _apply_action(
     mute_duration: int = 3600,
 ) -> None:
     chat_id = message.chat.id
-    user = message.from_user  # type: ignore[union-attr]
+    user = message.from_user
     user_id = user.id
     name = user.first_name or str(user_id)
     msg_id = message.message_id
@@ -86,7 +84,6 @@ async def _apply_action(
     if action == "ignore":
         return
 
-    # Always delete the offending message first
     if action in ("delete", "warn", "mute", "kick", "ban"):
         await mod.delete_message_safe(
             bot, session, chat_id=chat_id, message_id=msg_id,
@@ -132,12 +129,11 @@ async def _apply_action(
         )
 
     elif action == "delete" and notify_template:
-        # delete already done above; send notification
         await _notify(bot, chat_id, notify_template, user_id, name)
 
 
 # ---------------------------------------------------------------------------
-# Detection functions
+# Detection functions — existing
 # ---------------------------------------------------------------------------
 
 def _check_flood(chat_id: int, user_id: int, flood_count: int, flood_window: int) -> bool:
@@ -166,13 +162,99 @@ def _build_filter_map(filters: list[Filter]) -> dict[str, Filter]:
 
 
 # ---------------------------------------------------------------------------
+# Detection functions — V4 new
+# ---------------------------------------------------------------------------
+
+def _has_forwarded(message: Message) -> bool:
+    """True if the message is a forward from any source."""
+    return bool(
+        message.forward_date
+        or message.forward_from
+        or message.forward_from_chat
+        or message.forward_sender_name
+    )
+
+
+_MENTION_RE = re.compile(r"@\w+")
+
+
+def _has_mass_mention(text: str, threshold: int = 5) -> bool:
+    """True if the text contains 5+ @username mentions."""
+    return len(_MENTION_RE.findall(text)) >= threshold
+
+
+_HASHTAG_RE = re.compile(r"#\w+")
+
+
+def _has_hashtag(text: str) -> bool:
+    """True if the text contains at least one #hashtag."""
+    return bool(_HASHTAG_RE.search(text))
+
+
+# ---------------------------------------------------------------------------
+# Media lock checker — V4
+# ---------------------------------------------------------------------------
+
+async def _check_media_locks(
+    bot: Bot,
+    session: AsyncSession,
+    message: Message,
+) -> bool:
+    """
+    Delete the message if its media type is locked in group settings.
+    Returns True if the message was deleted (caller should return early).
+    """
+    settings = await repo.get_settings(session, message.chat.id)
+    if not settings:
+        return False
+
+    user = message.from_user
+    user_id = user.id
+    name = user.first_name or str(user_id)
+    chat_id = message.chat.id
+
+    lock_map = [
+        (settings.lock_photos,    message.photo,    S.media_photos),
+        (settings.lock_video,     message.video,    S.media_video),
+        (settings.lock_audio,     message.audio,    S.media_audio),
+        (settings.lock_documents, message.document, S.media_documents),
+        (settings.lock_stickers,  message.sticker,  S.media_stickers),
+        (settings.lock_gifs,      message.animation, S.media_gifs),
+        (settings.lock_polls,     message.poll,     S.media_polls),
+        (settings.lock_locations, message.location, S.media_locations),
+        (settings.lock_voice,     message.voice,    S.media_voice),
+    ]
+
+    for locked, media_obj, label in lock_map:
+        if locked and media_obj:
+            try:
+                await bot.delete_message(chat_id, message.message_id)
+            except Exception:
+                pass
+            try:
+                await bot.send_message(
+                    chat_id,
+                    S.v4_media_blocked.format(uid=user_id, name=name),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+            await repo.add_log(
+                session, group_id=chat_id, event_type="message_deleted",
+                target_id=user_id, details=f"media_lock:{label}",
+            )
+            return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Main handler
 # ---------------------------------------------------------------------------
 
 @router.message(F.chat.type.in_({"group", "supergroup"}))
 async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> None:
     """Intercept all group messages and apply enabled filters."""
-    # Ignore channel posts forwarded into groups
     if message.sender_chat:
         return
 
@@ -182,7 +264,6 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
 
     chat_id = message.chat.id
 
-    # Only process registered groups
     group = await repo.get_group(session, chat_id)
     if not group or not group.is_active:
         return
@@ -198,6 +279,10 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
 
     await repo.increment_stat(session, chat_id, "messages_today")
 
+    # ── V4: Media locks — checked before text filters ───────────────────────
+    if await _check_media_locks(bot, session, message):
+        return
+
     text = message.text or message.caption or ""
 
     filters = await repo.get_filters(session, chat_id)
@@ -206,7 +291,6 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
     mute_duration = settings.mute_duration if settings else 3600
 
     async def act(filter_type: str, reason: str, notify_tpl: str | None = None) -> bool:
-        """Apply action for a filter; return True if message was acted on."""
         f = fmap.get(filter_type)
         if not f or not f.enabled:
             return False
@@ -226,62 +310,61 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
         )
         return True
 
-    # ------------------------------------------------------------------
-    # Priority order: stop on first match that deletes/acts on the message
-    # ------------------------------------------------------------------
+    # ── V4: Forwarded messages ───────────────────────────────────────────────
+    if _has_forwarded(message):
+        if await act("forwarded", "forwarded", S.auto_forwarded):
+            return
 
-    # 1. Flood
+    # ── 1. Flood ─────────────────────────────────────────────────────────────
     f_flood = fmap.get("flood")
     if f_flood and f_flood.enabled and text:
-        flood_count, flood_window = 5, 10
-        if _check_flood(chat_id, user.id, flood_count, flood_window):
+        if _check_flood(chat_id, user.id, 5, 10):
             if await act("flood", "flood", S.auto_flood):
                 return
 
-    # 2. Duplicate messages
+    # ── 2. Duplicate messages ────────────────────────────────────────────────
     f_dup = fmap.get("duplicate_messages")
     if f_dup and f_dup.enabled and text:
         if _check_duplicate(chat_id, user.id, text, 30):
             if await act("duplicate_messages", "duplicate", S.auto_duplicate):
                 return
 
-    # 3. Telegram invite links
+    # ── 3. Telegram invite links ─────────────────────────────────────────────
     if text and has_telegram_link(text):
         if await act("telegram_links", "telegram_link", S.auto_telegram_link):
             return
 
-    # 4. External links
+    # ── 4. External links ────────────────────────────────────────────────────
     if text and has_external_link(text):
         if await act("external_links", "external_link", S.auto_external_link):
             return
 
-    # 5. Advertisement (@-mention promotion)
+    # ── 5. Advertisement ─────────────────────────────────────────────────────
     if text and has_advertisement(text):
         if await act("advertisement", "advertisement", S.auto_advertisement):
             return
 
-    # 6. Excessive emojis
+    # ── 6. Excessive emojis ──────────────────────────────────────────────────
     if text:
         emoji_count = count_emojis(text)
         f_emoji = fmap.get("excessive_emojis")
-        threshold = 10
-        if f_emoji and f_emoji.enabled and emoji_count > threshold:
+        if f_emoji and f_emoji.enabled and emoji_count > 10:
             if await act("excessive_emojis", "excessive_emojis", S.auto_emoji):
                 return
 
-    # 7. Repeated characters
+    # ── 7. Repeated characters ───────────────────────────────────────────────
     if text and has_repeated_chars(text):
         if await act("repeated_chars", "repeated_chars", S.auto_repeated):
             return
 
-    # 8. Long messages
+    # ── 8. Long messages ─────────────────────────────────────────────────────
     if text:
         f_long = fmap.get("long_messages")
         if f_long and f_long.enabled and len(text) > 2000:
             if await act("long_messages", "long_message", S.auto_long_msg):
                 return
 
-    # 9. Bad words — V2 smart detection (normalized, bypass-resistant)
+    # ── 9. Bad words ─────────────────────────────────────────────────────────
     if text:
         f_bw = fmap.get("bad_words")
         if f_bw and f_bw.enabled and f_bw.extra:
@@ -291,6 +374,16 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
                 if await act("bad_words", f"bad_word:{matched}", S.auto_bad_word):
                     return
 
-    # 10. Spam / insults — placeholder; AI classifier hook for V3
+    # ── 10. Spam / Insults — placeholder; AI classifier hook ─────────────────
     # f_spam = fmap.get("spam") ...
     # f_insults = fmap.get("insults") ...
+
+    # ── V4: Mass mention ─────────────────────────────────────────────────────
+    if text and _has_mass_mention(text):
+        if await act("mass_mention", "mass_mention", S.auto_mass_mention):
+            return
+
+    # ── V4: Hashtag ──────────────────────────────────────────────────────────
+    if text and _has_hashtag(text):
+        if await act("hashtag", "hashtag", S.auto_hashtag):
+            return

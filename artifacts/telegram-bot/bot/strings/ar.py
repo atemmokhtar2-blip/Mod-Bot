@@ -1,12 +1,10 @@
 """
 Arabic UI strings — single source of truth for every user-facing message.
-Version 3: Professional UX & Security Update.
+Version 4: Advanced Settings & Administration.
 
 Usage:
     from bot.strings.ar import S
     await message.reply(S.cmd_ban_missing_target)
-
-Future: swap this module with a different language module to support i18n.
 """
 
 from __future__ import annotations
@@ -27,12 +25,11 @@ class S:
     no_permission = "🚫 ليس لديك صلاحية لهذا الإجراء."
     unknown = "غير معروف"
 
-    # V3: status circle indicators
     on  = "🟢"
     off = "🔴"
 
-    # V3: security denial — shown to non-admins pressing management buttons
     no_permission_cb = "⛔ ليس لديك صلاحية لاستخدام أدوات الإدارة."
+    owner_only_cb    = "⛔ هذا الإجراء متاح لمالك المجموعة فقط."
 
     # ─── /start & Home ──────────────────────────────────────────────────────
     start_greeting = (
@@ -75,7 +72,6 @@ class S:
     btn_help       = "❓ المساعدة"
     btn_back       = "⬅️ رجوع"
 
-    # kept for backwards-compat with old callback paths
     btn_stats = "📊 الإحصائيات"
     btn_logs  = "📜 السجل"
 
@@ -148,22 +144,26 @@ class S:
     auto_protect_enabled_msg  = "✅ تم تفعيل الحماية التلقائية — جميع الفلاتر مفعّلة."
     auto_protect_disabled_msg = "🔴 تم إيقاف الحماية التلقائية — جميع الفلاتر معطّلة."
 
-    # Filter labels (also used in protection menu)
-    filter_bad_words      = "فلترة الكلمات المسيئة"
-    filter_insults        = "فلترة الشتائم"
-    filter_spam           = "فلترة السبام"
-    filter_flood          = "فلترة الفيضان"
-    filter_duplicates     = "فلترة التكرار"
-    filter_advertisement  = "فلترة الإعلانات"
-    filter_telegram_links = "فلترة الروابط"
-    filter_external_links = "فلترة الروابط الخارجية"
-    filter_excessive_emojis = "فلترة الرموز الزائدة"
-    filter_repeated_chars = "فلترة الأحرف المكررة"
-    filter_long_messages  = "فلترة الرسائل الطويلة"
+    # Filter labels (all 14)
+    filter_bad_words        = "فلترة الكلمات المسيئة"
+    filter_insults          = "فلترة الشتائم"
+    filter_spam             = "فلترة السبام"
+    filter_flood            = "فلترة السبام"
+    filter_duplicates       = "فلترة التكرار"
+    filter_advertisement    = "فلترة الإعلانات"
+    filter_telegram_links   = "فلترة الروابط"
+    filter_external_links   = "فلترة الروابط الخارجية"
+    filter_excessive_emojis = "فلترة الإيموجي الزائد"
+    filter_repeated_chars   = "فلترة الحروف المكررة"
+    filter_long_messages    = "فلترة الرسائل الطويلة"
+    # V4
+    filter_forwarded        = "فلترة إعادة التوجيه"
+    filter_mass_mention     = "فلترة المنشن الجماعي"
+    filter_hashtag          = "فلترة الهاشتاج"
 
     # Action labels
     action_ignore = "👁️ تجاهل"
-    action_delete = "🗑️ حذف"
+    action_delete = "❌ حذف الرسالة"
     action_warn   = "⚠️ تحذير"
     action_mute   = "🔇 كتم"
     action_kick   = "👢 طرد"
@@ -171,7 +171,225 @@ class S:
 
     action_set_ok = "✅ تم ضبط إجراء <b>{filter}</b> على <b>{action}</b>."
 
-    # ─── Settings ────────────────────────────────────────────────────────────
+    # ─── V4 Settings Center ──────────────────────────────────────────────────
+    v4_settings_title = (
+        "═══════════════\n"
+        "⚙️ <b>الإعدادات</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "اختر القسم الذي تريد تعديله:\n"
+        "═══════════════"
+    )
+
+    btn_v4_protection   = "🛡️ إعدادات الحماية"
+    btn_v4_punishments  = "⚠️ إعدادات العقوبات"
+    btn_v4_permissions  = "👮 صلاحيات المشرفين"
+    btn_v4_welcome      = "📝 رسالة الترحيب"
+    btn_v4_goodbye      = "👋 رسالة المغادرة"
+    btn_v4_media        = "🔒 إعدادات الوسائط"
+    btn_v4_channel      = "📢 إعدادات القناة"
+    btn_v4_language     = "🌍 اللغة"
+    btn_v4_reset        = "♻️ إعادة ضبط الإعدادات"
+
+    # ─── V4 Protection Settings ──────────────────────────────────────────────
+    v4_protection_title = (
+        "═══════════════\n"
+        "🛡️ <b>إعدادات الحماية</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "اضغط على أي فلتر لتفعيله أو تعطيله:\n"
+        "═══════════════"
+    )
+
+    # ─── V4 Punishment Settings ──────────────────────────────────────────────
+    v4_punishments_title = (
+        "═══════════════\n"
+        "⚠️ <b>إعدادات العقوبات</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "اختر فلتراً لضبط عقوبته:\n"
+        "═══════════════"
+    )
+    v4_punishment_filter_title = (
+        "═══════════════\n"
+        "⚠️ <b>عقوبة: {filter_name}</b>\n\n"
+        "العقوبة الحالية: <b>{current}</b>\n\n"
+        "اختر العقوبة الجديدة:\n"
+        "═══════════════"
+    )
+    v4_punishment_set = "✅ تم ضبط عقوبة <b>{filter}</b> على <b>{action}</b>."
+
+    # ─── V4 Admin Permissions ────────────────────────────────────────────────
+    v4_permissions_title = (
+        "═══════════════\n"
+        "👮 <b>صلاحيات المشرفين</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "⚠️ ملاحظة: التعديل متاح لمالك المجموعة فقط.\n\n"
+        "اضغط على الصلاحية لتفعيلها أو تعطيلها:\n"
+        "═══════════════"
+    )
+    v4_perm_toggled = "✅ تم تعديل الصلاحية."
+
+    perm_delete        = "حذف الرسائل"
+    perm_ban           = "حظر الأعضاء"
+    perm_unban         = "رفع الحظر"
+    perm_mute          = "كتم الأعضاء"
+    perm_unmute        = "رفع الكتم"
+    perm_pin           = "تثبيت الرسائل"
+    perm_unpin         = "إلغاء التثبيت"
+    perm_warn          = "إدارة التحذيرات"
+    perm_edit_settings = "تعديل الإعدادات"
+    perm_manage_admins = "إدارة المشرفين"
+
+    # ─── V4 Welcome Message ──────────────────────────────────────────────────
+    v4_welcome_title = (
+        "═══════════════\n"
+        "📝 <b>رسالة الترحيب</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "الحالة: <b>{status}</b>\n\n"
+        "النص الحالي:\n<i>{text}</i>\n\n"
+        "المتغيرات المتاحة:\n"
+        "<code>{{الاسم}}</code> • <code>{{اسم_المجموعة}}</code> • <code>{{اسم_المستخدم}}</code>\n"
+        "═══════════════"
+    )
+    btn_v4_welcome_toggle = "{status} تفعيل رسالة الترحيب"
+    btn_v4_welcome_edit   = "✏️ تعديل النص"
+    btn_v4_welcome_preview = "👁️ معاينة"
+
+    welcome_edit_prompt = (
+        "═══════════════\n"
+        "✏️ <b>تعديل رسالة الترحيب</b>\n\n"
+        "النص الحالي:\n<i>{current}</i>\n\n"
+        "أرسل النص الجديد.\n"
+        "المتغيرات المتاحة:\n"
+        "<code>{{الاسم}}</code> — الاسم الأول\n"
+        "<code>{{اسم_المجموعة}}</code> — اسم المجموعة\n"
+        "<code>{{اسم_المستخدم}}</code> — اليوزر\n"
+        "═══════════════"
+    )
+    welcome_updated = "✅ تم تحديث رسالة الترحيب!\n\nمعاينة:\n<i>{text}</i>"
+    welcome_preview = "👁️ <b>معاينة رسالة الترحيب:</b>\n\n{text}"
+
+    # ─── V4 Goodbye Message ──────────────────────────────────────────────────
+    v4_goodbye_title = (
+        "═══════════════\n"
+        "👋 <b>رسالة المغادرة</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "الحالة: <b>{status}</b>\n\n"
+        "النص الحالي:\n<i>{text}</i>\n\n"
+        "المتغيرات المتاحة:\n"
+        "<code>{{الاسم}}</code> • <code>{{اسم_المجموعة}}</code> • <code>{{اسم_المستخدم}}</code>\n"
+        "═══════════════"
+    )
+    btn_v4_goodbye_toggle  = "{status} تفعيل رسالة المغادرة"
+    btn_v4_goodbye_edit    = "✏️ تعديل النص"
+    btn_v4_goodbye_preview = "👁️ معاينة"
+
+    goodbye_edit_prompt = (
+        "═══════════════\n"
+        "✏️ <b>تعديل رسالة المغادرة</b>\n\n"
+        "النص الحالي:\n<i>{current}</i>\n\n"
+        "أرسل النص الجديد.\n"
+        "المتغيرات المتاحة:\n"
+        "<code>{{الاسم}}</code> — الاسم الأول\n"
+        "<code>{{اسم_المجموعة}}</code> — اسم المجموعة\n"
+        "<code>{{اسم_المستخدم}}</code> — اليوزر\n"
+        "═══════════════"
+    )
+    goodbye_updated = "✅ تم تحديث رسالة المغادرة!\n\nمعاينة:\n<i>{text}</i>"
+    goodbye_preview = "👁️ <b>معاينة رسالة المغادرة:</b>\n\n{text}"
+
+    # ─── V4 Media Settings ───────────────────────────────────────────────────
+    v4_media_title = (
+        "═══════════════\n"
+        "🔒 <b>إعدادات الوسائط</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "اضغط على أي نوع لقفله أو فتحه:\n"
+        "═══════════════"
+    )
+    v4_media_locked   = "✅ تم قفل {media_type}."
+    v4_media_unlocked = "✅ تم فتح {media_type}."
+    v4_media_blocked  = "🔒 <a href=\"tg://user?id={uid}\">{name}</a> — هذا النوع من الوسائط محظور."
+
+    media_photos    = "📷 الصور"
+    media_video     = "🎥 الفيديو"
+    media_audio     = "🎵 الصوتيات"
+    media_documents = "📄 الملفات"
+    media_stickers  = "🎭 الملصقات"
+    media_gifs      = "🎬 GIF"
+    media_polls     = "📊 الاستفتاءات"
+    media_locations = "📍 المواقع"
+    media_voice     = "🎤 الرسائل الصوتية"
+
+    # ─── V4 Channel Settings ─────────────────────────────────────────────────
+    v4_channel_title = (
+        "═══════════════\n"
+        "📢 <b>إعدادات القناة</b>\n\n"
+        "القناة: <b>{title}</b>\n\n"
+        "اختر إجراءً:\n"
+        "═══════════════"
+    )
+    v4_channel_no_channels = (
+        "═══════════════\n"
+        "📢 <b>إعدادات القناة</b>\n\n"
+        "لا توجد قنوات مربوطة.\n"
+        "📌 أضفني إلى قناة كمشرف لتظهر هنا.\n"
+        "═══════════════"
+    )
+    btn_v4_ch_info    = "ℹ️ معلومات القناة"
+    btn_v4_ch_verify  = "✅ التحقق من الصلاحيات"
+    btn_v4_ch_pin     = "📌 تثبيت آخر منشور"
+    btn_v4_ch_post    = "📝 إرسال رسالة"
+    btn_v4_ch_delete  = "🗑️ حذف آخر منشور"
+
+    v4_ch_info_text = (
+        "═══════════════\n"
+        "📢 <b>معلومات القناة</b>\n\n"
+        "🆔 المعرّف: <code>{channel_id}</code>\n"
+        "📛 الاسم: {title}\n"
+        "🔗 اليوزر: {username}\n"
+        "═══════════════"
+    )
+    v4_ch_verify_ok   = "✅ البوت يملك الصلاحيات الكاملة في هذه القناة."
+    v4_ch_verify_fail = "⚠️ البوت لا يملك كامل الصلاحيات. تحقق من إعدادات المشرف."
+    v4_ch_pin_ok      = "✅ تم تثبيت آخر منشور."
+    v4_ch_pin_fail    = "❌ تعذّر التثبيت. تحقق من صلاحياتي."
+    v4_ch_delete_ok   = "✅ تم حذف آخر منشور."
+    v4_ch_delete_fail = "❌ تعذّر الحذف. تحقق من صلاحياتي."
+
+    # ─── V4 Language ─────────────────────────────────────────────────────────
+    v4_language_title = (
+        "═══════════════\n"
+        "🌍 <b>اللغة</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "اللغة الحالية: <b>{current}</b>\n\n"
+        "اختر اللغة:\n"
+        "═══════════════"
+    )
+    v4_language_set = "✅ تم تغيير اللغة إلى <b>{lang}</b>."
+
+    lang_ar = "🇸🇦 العربية"
+    lang_en = "🇺🇸 English"
+
+    # ─── V4 Reset Settings ───────────────────────────────────────────────────
+    v4_reset_confirm = (
+        "═══════════════\n"
+        "♻️ <b>إعادة ضبط الإعدادات</b>\n\n"
+        "⚠️ هل أنت متأكد من إعادة جميع إعدادات المجموعة؟\n\n"
+        "سيتم إعادة ضبط:\n"
+        "• جميع الفلاتر\n"
+        "• رسائل الترحيب والمغادرة\n"
+        "• إعدادات الوسائط\n"
+        "• حد التحذيرات\n"
+        "• العقوبات\n\n"
+        "⛔ هذا الإجراء لا يمكن التراجع عنه!\n"
+        "═══════════════"
+    )
+    v4_reset_done = (
+        "════════════════════\n"
+        "♻️ <b>تمت إعادة الضبط</b>\n\n"
+        "✅ تم إعادة جميع إعدادات المجموعة إلى الوضع الافتراضي.\n"
+        "════════════════════"
+    )
+
+    # ─── Settings (legacy — kept for backwards compat) ────────────────────────
     settings_title = (
         "═══════════════\n"
         "⚙️ <b>الإعدادات</b>\n\n"
@@ -196,14 +414,6 @@ class S:
     warn_limit_invalid = "❌ أرسل رقماً صحيحاً بين 1 و 20."
     warn_limit_set = "✅ تم ضبط حد التحذيرات على <b>{limit}</b>."
 
-    welcome_edit_prompt = (
-        "✏️ <b>تعديل رسالة الترحيب</b>\n\n"
-        "الحالية:\n<i>{current}</i>\n\n"
-        "أرسل النص الجديد.\n"
-        "يمكنك استخدام: <code>{{first_name}}</code> <code>{{username}}</code> <code>{{group_name}}</code>"
-    )
-    welcome_updated = "✅ تم تحديث رسالة الترحيب!\n\nمعاينة:\n<i>{text}</i>"
-
     punishment_title = "🔨 <b>العقوبة التلقائية</b>\n\nتُطبَّق عند الوصول لحد التحذيرات:"
     punishment_mute = "🔇 كتم"
     punishment_kick = "👢 طرد"
@@ -227,12 +437,11 @@ class S:
     btn_member_reset_warns = "🔄 إعادة التحذيرات"
     btn_member_history     = "📋 سجل التحذيرات"
 
-    # V3: Confirmation prompts
     confirm_ban   = "⚠️ <b>تأكيد الحظر</b>\n\nهل أنت متأكد من حظر هذا المستخدم؟"
     confirm_mute  = "⚠️ <b>تأكيد الكتم</b>\n\nهل أنت متأكد من كتم هذا المستخدم لمدة ساعة؟"
     confirm_kick  = "⚠️ <b>تأكيد الطرد</b>\n\nهل أنت متأكد من طرد هذا المستخدم؟"
     confirm_reset = "⚠️ <b>تأكيد إعادة التحذيرات</b>\n\nهل أنت متأكد من إعادة تعيين جميع التحذيرات؟"
-    confirm_yes   = "✅ نعم، تأكيد"
+    confirm_yes   = "✅ نعم"
     confirm_no    = "❌ إلغاء"
 
     member_banned       = "✅ تم حظر العضو."
@@ -293,21 +502,20 @@ class S:
     logs_title = "📜 <b>سجل الأحداث</b>"
     logs_none  = "📜 لا توجد أحداث مسجّلة بعد."
 
-    # Event type labels
-    log_user_joined     = "انضمام عضو"
-    log_user_left       = "مغادرة عضو"
-    log_user_banned     = "حظر مستخدم"
-    log_user_unbanned   = "رفع حظر"
-    log_user_muted      = "كتم مستخدم"
-    log_user_unmuted    = "رفع كتم"
-    log_user_warned     = "تحذير"
-    log_message_deleted = "حذف رسالة"
-    log_message_pinned  = "تثبيت رسالة"
+    log_user_joined      = "انضمام عضو"
+    log_user_left        = "مغادرة عضو"
+    log_user_banned      = "حظر مستخدم"
+    log_user_unbanned    = "رفع حظر"
+    log_user_muted       = "كتم مستخدم"
+    log_user_unmuted     = "رفع كتم"
+    log_user_warned      = "تحذير"
+    log_message_deleted  = "حذف رسالة"
+    log_message_pinned   = "تثبيت رسالة"
     log_message_unpinned = "إلغاء تثبيت"
     log_settings_changed = "تغيير الإعدادات"
     log_filter_triggered = "تفعّل فلتر"
-    log_bot_added       = "إضافة البوت"
-    log_bot_removed     = "إزالة البوت"
+    log_bot_added        = "إضافة البوت"
+    log_bot_removed      = "إزالة البوت"
 
     # ─── Help ────────────────────────────────────────────────────────────────
     help_text = (
@@ -351,6 +559,11 @@ class S:
     auto_repeated      = "🔤 <a href=\"tg://user?id={uid}\">{name}</a> — أحرف مكررة."
     auto_long_msg      = "📜 <a href=\"tg://user?id={uid}\">{name}</a> — الرسالة طويلة جداً."
     auto_bad_word      = "🤬 <a href=\"tg://user?id={uid}\">{name}</a> — كلمة محظورة."
+    # V4
+    auto_forwarded     = "↩️ <a href=\"tg://user?id={uid}\">{name}</a> — إعادة التوجيه ممنوعة."
+    auto_mass_mention  = "📢 <a href=\"tg://user?id={uid}\">{name}</a> — منشن جماعي ممنوع."
+    auto_hashtag       = "#️⃣ <a href=\"tg://user?id={uid}\">{name}</a> — هاشتاق ممنوع."
+
     auto_warn_notice   = "⚠️ تحذير <b>{count}/{limit}</b> — {reason}"
     auto_punished      = "⚠️ <a href=\"tg://user?id={uid}\">{name}</a> وصل لحد التحذيرات — تم تطبيق العقوبة التلقائية."
     auto_muted         = "🔇 تم كتم <a href=\"tg://user?id={uid}\">{name}</a>."
