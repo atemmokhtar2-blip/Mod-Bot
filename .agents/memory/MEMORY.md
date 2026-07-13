@@ -1,0 +1,1 @@
+- [Replit asyncpg SSL](asyncpg-ssl.md) — Replit internal Postgres rejects SSL; asyncpg also rejects sslmode URL param; requires specific fix pattern.
