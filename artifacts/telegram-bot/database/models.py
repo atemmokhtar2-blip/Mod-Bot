@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models.
+SQLAlchemy ORM models — Version 2.
 
 Tables
 ------
@@ -10,10 +10,12 @@ admins          – Per-group admin grants
 group_settings  – Per-group configuration knobs
 filters         – Per-group moderation filter configuration
 warnings        – Accumulated warning counters per member per group
+warning_history – Individual warning events (V2: full history)
 logs            – Audit log of moderation events
 statistics      – Daily counters per group
 
-Future: add plugin_data (JSONB), premium_subscriptions, scheduled_posts.
+Future: plugin_data (JSONB), premium_subscriptions, scheduled_posts,
+        ai_moderation_decisions.
 """
 
 from datetime import datetime, timezone
@@ -24,11 +26,11 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
-    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -118,12 +120,15 @@ class Channel(Base):
 
 
 # ---------------------------------------------------------------------------
-# admins (per-group grants stored by the bot, distinct from Telegram's own list)
+# admins (per-group grants stored by the bot)
 # ---------------------------------------------------------------------------
 
 class Admin(Base):
     __tablename__ = "admins"
-    __table_args__ = (UniqueConstraint("group_id", "user_id"),)
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id"),
+        Index("ix_admins_group_user", "group_id", "user_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[int] = mapped_column(
@@ -155,14 +160,14 @@ class GroupSettings(Base):
     welcome_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     welcome_text: Mapped[str] = mapped_column(
         Text,
-        default="Welcome, {first_name}! 👋 Please read the group rules.",
+        default="أهلاً وسهلاً {first_name}! 👋 يرجى قراءة قواعد المجموعة.",
     )
     warning_limit: Mapped[int] = mapped_column(Integer, default=3)
     # Action after warning_limit reached: mute | kick | ban
     auto_punishment: Mapped[str] = mapped_column(String(16), default="mute")
     mute_duration: Mapped[int] = mapped_column(Integer, default=3600)
     log_events: Mapped[bool] = mapped_column(Boolean, default=True)
-    language: Mapped[str] = mapped_column(String(8), default="en")
+    language: Mapped[str] = mapped_column(String(8), default="ar")
 
     group: Mapped["Group"] = relationship("Group", back_populates="settings")
 
@@ -190,7 +195,10 @@ FILTER_ACTIONS = ["ignore", "delete", "warn", "mute", "kick", "ban"]
 
 class Filter(Base):
     __tablename__ = "filters"
-    __table_args__ = (UniqueConstraint("group_id", "filter_type"),)
+    __table_args__ = (
+        UniqueConstraint("group_id", "filter_type"),
+        Index("ix_filters_group_type", "group_id", "filter_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[int] = mapped_column(
@@ -207,12 +215,15 @@ class Filter(Base):
 
 
 # ---------------------------------------------------------------------------
-# warnings
+# warnings  (counter row per member per group)
 # ---------------------------------------------------------------------------
 
 class Warning(Base):
     __tablename__ = "warnings"
-    __table_args__ = (UniqueConstraint("group_id", "user_id"),)
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id"),
+        Index("ix_warnings_group_user", "group_id", "user_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[int] = mapped_column(
@@ -223,6 +234,31 @@ class Warning(Base):
     last_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_warned_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# warning_history  (V2: full per-event log for the warning system)
+# ---------------------------------------------------------------------------
+
+class WarningHistory(Base):
+    """Each row is one warning event — allows showing full history."""
+    __tablename__ = "warning_history"
+    __table_args__ = (
+        Index("ix_warn_hist_group_user", "group_id", "user_id"),
+        Index("ix_warn_hist_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("groups.group_id", ondelete="CASCADE")
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    actor_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    count_at_time: Mapped[int] = mapped_column(Integer, default=1)  # counter value when issued
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
     )
 
 
@@ -250,6 +286,9 @@ LOG_EVENTS = [
 
 class Log(Base):
     __tablename__ = "logs"
+    __table_args__ = (
+        Index("ix_logs_group_created", "group_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[int] = mapped_column(
@@ -272,15 +311,19 @@ class Log(Base):
 
 class Statistic(Base):
     __tablename__ = "statistics"
-    __table_args__ = (UniqueConstraint("group_id", "date"),)
+    __table_args__ = (
+        UniqueConstraint("group_id", "date"),
+        Index("ix_statistics_group_date", "group_id", "date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("groups.group_id", ondelete="CASCADE")
     )
-    date: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD
+    date: Mapped[str] = mapped_column(String(10))   # YYYY-MM-DD
     total_members: Mapped[int] = mapped_column(Integer, default=0)
     messages_today: Mapped[int] = mapped_column(Integer, default=0)
     deleted_messages: Mapped[int] = mapped_column(Integer, default=0)
     muted_members: Mapped[int] = mapped_column(Integer, default=0)
     banned_members: Mapped[int] = mapped_column(Integer, default=0)
+    warned_members: Mapped[int] = mapped_column(Integer, default=0)  # V2: track warnings too

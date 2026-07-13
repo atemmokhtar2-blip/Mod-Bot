@@ -1,5 +1,5 @@
 """
-/start command handler — shows the main private-chat dashboard.
+/start command handler — Arabic dashboard.
 Future: onboarding wizard for first-time users, language selection.
 """
 
@@ -10,8 +10,9 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import repository as repo
 from bot.keyboards.builder import main_menu_kb
+from bot.strings.ar import S
+from database import repository as repo
 from utils.helpers import escape_html
 from utils.logger import get_logger
 
@@ -26,7 +27,6 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
     if not user:
         return
 
-    # Persist the user
     await repo.upsert_user(
         session,
         user_id=user.id,
@@ -36,23 +36,18 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
     )
 
     groups = await repo.get_groups_for_user(session, user.id)
-
-    greeting = (
-        f"👋 Hello, <b>{escape_html(user.first_name)}</b>!\n\n"
-        "I'm your <b>Telegram Moderation Bot</b>.\n\n"
-    )
+    name = escape_html(user.first_name)
 
     if groups:
-        greeting += f"You manage <b>{len(groups)}</b> group(s). Select one below:"
+        status = S.start_has_groups.format(count=len(groups))
     else:
-        greeting += (
-            "You don't manage any groups yet.\n"
-            "Add me to a group and grant me <b>Administrator</b> privileges to get started."
-        )
+        status = S.start_no_groups
+
+    text = S.start_greeting.format(name=name, status=status)
 
     await message.answer(
-        greeting,
+        text,
         reply_markup=main_menu_kb(groups),
         parse_mode="HTML",
     )
-    log.info("User %s opened the dashboard", user.id)
+    log.info("User %s opened the Arabic dashboard", user.id)

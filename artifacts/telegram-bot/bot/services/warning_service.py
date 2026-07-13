@@ -1,6 +1,7 @@
 """
-Warning system service.
+Warning system service — Version 2.
 Handles warn/reset and triggers auto-punishment when limit is reached.
+Records full warning history in warning_history table.
 Future: warning decay over time, per-filter warning weights.
 """
 
@@ -26,7 +27,7 @@ async def warn_user(
     reason: str | None = None,
 ) -> tuple[int, int, bool]:
     """
-    Add a warning.
+    Add a warning, record history entry, trigger auto-punishment if limit reached.
     Returns (new_count, warning_limit, punishment_applied).
     """
     settings = await repo.get_settings(session, chat_id)
@@ -34,7 +35,12 @@ async def warn_user(
     auto_punishment = settings.auto_punishment if settings else "mute"
     mute_duration = settings.mute_duration if settings else 3600
 
-    new_count = await repo.add_warning(session, chat_id, user_id, reason)
+    # add_warning now records history automatically
+    new_count = await repo.add_warning(
+        session, chat_id, user_id,
+        reason=reason, actor_id=actor_id,
+    )
+
     await repo.add_log(
         session,
         group_id=chat_id,
@@ -44,26 +50,30 @@ async def warn_user(
         details=f"count={new_count}/{warning_limit} reason={reason}",
     )
 
+    # V2: also bump warned_members stat
+    await repo.increment_stat(session, chat_id, "warned_members")
+
     punishment_applied = False
     if new_count >= warning_limit:
-        # Reset warnings before punishment so the counter is clean
         await repo.reset_warnings(session, chat_id, user_id)
 
         if auto_punishment == "ban":
             punishment_applied = await mod.ban_user(
                 bot, session, chat_id=chat_id, user_id=user_id,
-                actor_id=actor_id, reason=f"Auto-ban: reached {warning_limit} warnings",
+                actor_id=actor_id,
+                reason=f"حظر تلقائي: وصل لحد {warning_limit} تحذير",
             )
         elif auto_punishment == "kick":
             punishment_applied = await mod.kick_user(
                 bot, session, chat_id=chat_id, user_id=user_id,
-                actor_id=actor_id, reason=f"Auto-kick: reached {warning_limit} warnings",
+                actor_id=actor_id,
+                reason=f"طرد تلقائي: وصل لحد {warning_limit} تحذير",
             )
         else:  # default: mute
             punishment_applied = await mod.mute_user(
                 bot, session, chat_id=chat_id, user_id=user_id,
                 duration_seconds=mute_duration, actor_id=actor_id,
-                reason=f"Auto-mute: reached {warning_limit} warnings",
+                reason=f"كتم تلقائي: وصل لحد {warning_limit} تحذير",
             )
 
     return new_count, warning_limit, punishment_applied

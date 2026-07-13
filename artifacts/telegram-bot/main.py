@@ -1,16 +1,16 @@
 """
-Entry point for the Telegram Moderation Bot.
+Entry point — Version 2 (Arabic UI).
 
 Boot sequence
 -------------
 1. Load config from environment variables
 2. Set up logging
-3. Initialise the database (create tables if not existing)
+3. Initialise the database (create new tables, indexes)
 4. Build Bot + Dispatcher
-5. Register middleware, routers, commands
+5. Register middleware, routers, commands (Arabic labels)
 6. Start long-polling
 
-Future: swap long-polling for webhook when deploying to production server.
+Future: swap long-polling for webhook in production.
 """
 
 import asyncio
@@ -41,10 +41,10 @@ async def main() -> None:
     config = load_config()
     setup_logging(config.log_level)
     log = get_logger("main")
-    log.info("Starting Telegram Moderation Bot…")
+    log.info("Starting Telegram Moderation Bot v2 (Arabic)…")
 
     # ------------------------------------------------------------------
-    # Database
+    # Database — create/migrate tables
     # ------------------------------------------------------------------
     await init_db()
 
@@ -56,8 +56,8 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
-    # MemoryStorage is fine for V1 (FSM states survive until restart).
-    # Future: replace with RedisStorage for multi-worker / persistent FSM.
+    # MemoryStorage for FSM (welcome/warn-limit editing wizard).
+    # Future: RedisStorage for multi-worker / persistent FSM.
     dp = Dispatcher(storage=MemoryStorage())
 
     # ------------------------------------------------------------------
@@ -68,7 +68,7 @@ async def main() -> None:
     # ------------------------------------------------------------------
     # Routers — order matters:
     #   1. Lifecycle events (bot joins/leaves, member joins/leaves)
-    #   2. Private-chat dashboard (start command)
+    #   2. Private-chat dashboard (/start)
     #   3. Callback queries (inline buttons)
     #   4. Admin commands (in-group text commands)
     #   5. Message filter (last — catches everything else)
@@ -80,30 +80,30 @@ async def main() -> None:
     dp.include_router(message_filter.router)
 
     # ------------------------------------------------------------------
-    # Bot commands menu (shown in Telegram UI)
+    # Bot commands menu — Arabic labels shown in Telegram UI
     # ------------------------------------------------------------------
     from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 
     private_commands = [
-        BotCommand(command="start", description="Open the control panel"),
+        BotCommand(command="start", description="فتح لوحة التحكم"),
     ]
     group_commands = [
-        BotCommand(command="ban",        description="Ban a user (reply)"),
-        BotCommand(command="unban",      description="Unban a user"),
-        BotCommand(command="mute",       description="Mute a user (reply) [duration]"),
-        BotCommand(command="unmute",     description="Unmute a user (reply)"),
-        BotCommand(command="warn",       description="Warn a user (reply)"),
-        BotCommand(command="resetwarns", description="Reset user warnings (reply)"),
-        BotCommand(command="del",        description="Delete a message (reply)"),
-        BotCommand(command="pin",        description="Pin a message (reply)"),
-        BotCommand(command="unpin",      description="Unpin a message (reply)"),
-        BotCommand(command="info",       description="Show user info (reply)"),
+        BotCommand(command="ban",        description="حظر مستخدم (بالرد)"),
+        BotCommand(command="unban",      description="رفع الحظر"),
+        BotCommand(command="mute",       description="كتم مستخدم (بالرد) [مدة]"),
+        BotCommand(command="unmute",     description="رفع الكتم (بالرد)"),
+        BotCommand(command="warn",       description="تحذير مستخدم (بالرد)"),
+        BotCommand(command="resetwarns", description="إعادة تعيين التحذيرات"),
+        BotCommand(command="del",        description="حذف رسالة (بالرد)"),
+        BotCommand(command="pin",        description="تثبيت رسالة (بالرد)"),
+        BotCommand(command="unpin",      description="إلغاء التثبيت"),
+        BotCommand(command="info",       description="معلومات المستخدم (بالرد)"),
     ]
 
     try:
         await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
         await bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
-        log.info("Bot commands registered.")
+        log.info("Arabic bot commands registered.")
     except Exception as exc:
         log.warning("Could not set bot commands: %s", exc)
 
@@ -117,7 +117,7 @@ async def main() -> None:
         await dp.start_polling(
             bot,
             allowed_updates=dp.resolve_used_update_types(),
-            drop_pending_updates=True,   # ignore updates that arrived while bot was offline
+            drop_pending_updates=True,
         )
     finally:
         await bot.session.close()

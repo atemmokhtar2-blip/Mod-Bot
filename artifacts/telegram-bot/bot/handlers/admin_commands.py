@@ -1,7 +1,5 @@
 """
-Admin command handlers.
-Commands work via reply (reply to target user's message) or
-username/user_id argument.
+Admin command handlers — Version 2 (Arabic responses).
 
 Commands
 --------
@@ -16,7 +14,7 @@ Commands
 /unpin – unpin replied message
 /info  – show member info
 
-Future: /kick, /promote, /demote, /slow_mode.
+Future: /kick, /promote, /demote, /slow_mode, /warn_history.
 """
 
 from __future__ import annotations
@@ -31,14 +29,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.filters.admin_filter import IsGroupAdmin
 from bot.services import moderation_service as mod
 from bot.services.warning_service import warn_user
+from bot.strings.ar import S
 from database import repository as repo
-from utils.helpers import escape_html, format_duration, mention_html, parse_duration
+from utils.helpers import (
+    escape_html,
+    format_datetime_ar,
+    format_duration,
+    mention_html,
+    parse_duration,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
 router = Router(name="admin_commands")
 
-# All command handlers require the user to be a Telegram admin/creator
 router.message.filter(IsGroupAdmin())
 
 
@@ -47,10 +51,7 @@ router.message.filter(IsGroupAdmin())
 # ---------------------------------------------------------------------------
 
 async def _resolve_target(message: Message, bot: Bot) -> tuple[int, str] | None:
-    """
-    Return (user_id, display_name) of the target user.
-    Priority: replied-to message > first command argument (user_id or @username).
-    """
+    """Return (user_id, display_name) of the target user."""
     if message.reply_to_message and message.reply_to_message.from_user:
         u = message.reply_to_message.from_user
         return u.id, u.first_name
@@ -60,12 +61,10 @@ async def _resolve_target(message: Message, bot: Bot) -> tuple[int, str] | None:
         return None
 
     arg = args[1]
-    # Numeric user ID
     if arg.lstrip("-").isdigit():
         uid = int(arg)
         return uid, str(uid)
 
-    # @username
     if arg.startswith("@"):
         username = arg[1:]
         try:
@@ -90,7 +89,7 @@ def _extract_reason(message: Message, offset: int = 2) -> str | None:
 async def cmd_ban(message: Message, bot: Bot, session: AsyncSession) -> None:
     target = await _resolve_target(message, bot)
     if not target:
-        await message.reply("❌ Reply to a message or provide a user ID/username.")
+        await message.reply(S.cmd_need_target)
         return
 
     user_id, name = target
@@ -105,10 +104,10 @@ async def cmd_ban(message: Message, bot: Bot, session: AsyncSession) -> None:
     )
     if success:
         mention = mention_html(user_id, name)
-        r = f" — {escape_html(reason)}" if reason else ""
-        await message.reply(f"🚫 {mention} has been banned{r}.", parse_mode="HTML")
+        r = S.cmd_reason_prefix.format(reason=escape_html(reason)) if reason else ""
+        await message.reply(S.cmd_ban_ok.format(mention=mention, reason=r), parse_mode="HTML")
     else:
-        await message.reply("❌ Could not ban this user. Check my permissions.")
+        await message.reply(S.cmd_ban_fail)
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +118,7 @@ async def cmd_ban(message: Message, bot: Bot, session: AsyncSession) -> None:
 async def cmd_unban(message: Message, bot: Bot, session: AsyncSession) -> None:
     target = await _resolve_target(message, bot)
     if not target:
-        await message.reply("❌ Reply to a message or provide a user ID.")
+        await message.reply(S.cmd_need_target)
         return
 
     user_id, name = target
@@ -130,9 +129,9 @@ async def cmd_unban(message: Message, bot: Bot, session: AsyncSession) -> None:
         actor_id=message.from_user.id,  # type: ignore[union-attr]
     )
     if success:
-        await message.reply(f"✅ User <b>{escape_html(name)}</b> has been unbanned.", parse_mode="HTML")
+        await message.reply(S.cmd_unban_ok.format(name=escape_html(name)), parse_mode="HTML")
     else:
-        await message.reply("❌ Could not unban this user.")
+        await message.reply(S.cmd_unban_fail)
 
 
 # ---------------------------------------------------------------------------
@@ -143,14 +142,13 @@ async def cmd_unban(message: Message, bot: Bot, session: AsyncSession) -> None:
 async def cmd_mute(message: Message, bot: Bot, session: AsyncSession) -> None:
     target = await _resolve_target(message, bot)
     if not target:
-        await message.reply("❌ Reply to a message or provide a user ID.")
+        await message.reply(S.cmd_need_target)
         return
 
     user_id, name = target
     args = (message.text or "").split()
 
-    # Try to parse duration from args[2]
-    duration = 3600  # default 1 hour
+    duration = 3600
     reason_start = 2
     if len(args) > 2:
         parsed = parse_duration(args[2])
@@ -171,13 +169,13 @@ async def cmd_mute(message: Message, bot: Bot, session: AsyncSession) -> None:
     )
     if success:
         mention = mention_html(user_id, name)
-        r = f" — {escape_html(reason)}" if reason else ""
+        r = S.cmd_reason_prefix.format(reason=escape_html(reason)) if reason else ""
         await message.reply(
-            f"🔇 {mention} muted for <b>{format_duration(duration)}</b>{r}.",
+            S.cmd_mute_ok.format(mention=mention, duration=format_duration(duration), reason=r),
             parse_mode="HTML",
         )
     else:
-        await message.reply("❌ Could not mute this user. Check my permissions.")
+        await message.reply(S.cmd_mute_fail)
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +186,7 @@ async def cmd_mute(message: Message, bot: Bot, session: AsyncSession) -> None:
 async def cmd_unmute(message: Message, bot: Bot, session: AsyncSession) -> None:
     target = await _resolve_target(message, bot)
     if not target:
-        await message.reply("❌ Reply to a message or provide a user ID.")
+        await message.reply(S.cmd_need_target)
         return
 
     user_id, name = target
@@ -199,9 +197,9 @@ async def cmd_unmute(message: Message, bot: Bot, session: AsyncSession) -> None:
         actor_id=message.from_user.id,  # type: ignore[union-attr]
     )
     if success:
-        await message.reply(f"🔊 <b>{escape_html(name)}</b> has been unmuted.", parse_mode="HTML")
+        await message.reply(S.cmd_unmute_ok.format(name=escape_html(name)), parse_mode="HTML")
     else:
-        await message.reply("❌ Could not unmute this user.")
+        await message.reply(S.cmd_unmute_fail)
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +210,7 @@ async def cmd_unmute(message: Message, bot: Bot, session: AsyncSession) -> None:
 async def cmd_warn(message: Message, bot: Bot, session: AsyncSession) -> None:
     target = await _resolve_target(message, bot)
     if not target:
-        await message.reply("❌ Reply to a message or provide a user ID.")
+        await message.reply(S.cmd_need_target)
         return
 
     user_id, name = target
@@ -226,16 +224,16 @@ async def cmd_warn(message: Message, bot: Bot, session: AsyncSession) -> None:
         reason=reason,
     )
     mention = mention_html(user_id, name)
-    r = f"\n📝 Reason: {escape_html(reason)}" if reason else ""
+    r = S.cmd_reason_prefix.format(reason=escape_html(reason)) if reason else ""
 
     if punished:
         await message.reply(
-            f"⚠️ {mention} received warning <b>{limit}/{limit}</b> and was automatically punished.{r}",
+            S.cmd_warn_punished.format(mention=mention, limit=limit, reason=r),
             parse_mode="HTML",
         )
     else:
         await message.reply(
-            f"⚠️ {mention} warned — <b>{count}/{limit}</b>.{r}",
+            S.cmd_warn_ok.format(mention=mention, count=count, limit=limit, reason=r),
             parse_mode="HTML",
         )
 
@@ -248,15 +246,12 @@ async def cmd_warn(message: Message, bot: Bot, session: AsyncSession) -> None:
 async def cmd_resetwarns(message: Message, bot: Bot, session: AsyncSession) -> None:
     target = await _resolve_target(message, bot)
     if not target:
-        await message.reply("❌ Reply to a message or provide a user ID.")
+        await message.reply(S.cmd_need_target)
         return
 
     user_id, name = target
     await repo.reset_warnings(session, message.chat.id, user_id)
-    await message.reply(
-        f"🔄 Warnings reset for <b>{escape_html(name)}</b>.",
-        parse_mode="HTML",
-    )
+    await message.reply(S.cmd_resetwarns_ok.format(name=escape_html(name)), parse_mode="HTML")
 
 
 # ---------------------------------------------------------------------------
@@ -266,17 +261,16 @@ async def cmd_resetwarns(message: Message, bot: Bot, session: AsyncSession) -> N
 @router.message(Command("del"))
 async def cmd_del(message: Message, bot: Bot, session: AsyncSession) -> None:
     if not message.reply_to_message:
-        await message.reply("❌ Reply to the message you want to delete.")
+        await message.reply(S.cmd_del_need_reply)
         return
 
     target_msg = message.reply_to_message
-    # Delete both the target and the command message
     success = await mod.delete_message_safe(
         bot, session,
         chat_id=message.chat.id,
         message_id=target_msg.message_id,
         actor_id=message.from_user.id,  # type: ignore[union-attr]
-        reason="/del command",
+        reason="أمر /del",
     )
     if success:
         await mod.delete_message_safe(
@@ -285,7 +279,7 @@ async def cmd_del(message: Message, bot: Bot, session: AsyncSession) -> None:
             message_id=message.message_id,
         )
     else:
-        await message.reply("❌ Could not delete that message.")
+        await message.reply(S.cmd_del_fail)
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +289,7 @@ async def cmd_del(message: Message, bot: Bot, session: AsyncSession) -> None:
 @router.message(Command("pin"))
 async def cmd_pin(message: Message, bot: Bot, session: AsyncSession) -> None:
     if not message.reply_to_message:
-        await message.reply("❌ Reply to the message you want to pin.")
+        await message.reply(S.cmd_pin_need_reply)
         return
 
     success = await mod.pin_message(
@@ -305,7 +299,7 @@ async def cmd_pin(message: Message, bot: Bot, session: AsyncSession) -> None:
         actor_id=message.from_user.id,  # type: ignore[union-attr]
     )
     if not success:
-        await message.reply("❌ Could not pin that message.")
+        await message.reply(S.cmd_pin_fail)
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +314,7 @@ async def cmd_unpin(message: Message, bot: Bot, session: AsyncSession) -> None:
         else None
     )
     if not target_id:
-        await message.reply("❌ Reply to the message you want to unpin.")
+        await message.reply(S.cmd_unpin_need_reply)
         return
 
     success = await mod.unpin_message(
@@ -330,7 +324,7 @@ async def cmd_unpin(message: Message, bot: Bot, session: AsyncSession) -> None:
         actor_id=message.from_user.id,  # type: ignore[union-attr]
     )
     if not success:
-        await message.reply("❌ Could not unpin that message.")
+        await message.reply(S.cmd_unpin_fail)
 
 
 # ---------------------------------------------------------------------------
@@ -341,36 +335,50 @@ async def cmd_unpin(message: Message, bot: Bot, session: AsyncSession) -> None:
 async def cmd_info(message: Message, bot: Bot, session: AsyncSession) -> None:
     target = await _resolve_target(message, bot)
     if not target:
-        # Default to self
         u = message.from_user
         if u:
             target = (u.id, u.first_name)
         else:
-            await message.reply("❌ Could not resolve target user.")
+            await message.reply(S.cmd_info_fail)
             return
 
     user_id, _ = target
     db_user = await repo.get_user(session, user_id)
     warnings = await repo.get_warnings(session, message.chat.id, user_id)
     warn_count = warnings.count if warnings else 0
+    last_warn_dt = (
+        format_datetime_ar(warnings.last_warned_at)
+        if warnings and warnings.last_warned_at else "—"
+    )
+
+    # Status map → Arabic labels
+    status_map = {
+        "creator": "مالك المجموعة 👑",
+        "administrator": "مشرف 👮",
+        "member": "عضو",
+        "restricted": "مقيّد 🔇",
+        "left": "غادر",
+        "kicked": "محظور 🚫",
+        "unknown": S.unknown,
+    }
 
     try:
         member = await bot.get_chat_member(message.chat.id, user_id)
-        status = member.status
         tg_user = member.user
-        name = f"{tg_user.first_name}" + (f" {tg_user.last_name}" if tg_user.last_name else "")
+        status_ar = status_map.get(member.status, member.status)
+        name = tg_user.first_name + (f" {tg_user.last_name}" if tg_user.last_name else "")
         username = f"@{tg_user.username}" if tg_user.username else "—"
     except Exception:
         name = db_user.display_name() if db_user else str(user_id)
         username = f"@{db_user.username}" if db_user and db_user.username else "—"
-        status = "unknown"
+        status_ar = S.unknown
 
-    text = (
-        f"👤 <b>User Info</b>\n\n"
-        f"🆔 ID: <code>{user_id}</code>\n"
-        f"📛 Name: {escape_html(name)}\n"
-        f"🔗 Username: {username}\n"
-        f"🏷 Status: {status}\n"
-        f"⚠️ Warnings: {warn_count}"
+    text = S.cmd_info_text.format(
+        uid=user_id,
+        name=escape_html(name),
+        username=username,
+        status=status_ar,
+        warns=warn_count,
+        last_warn=last_warn_dt,
     )
     await message.reply(text, parse_mode="HTML")

@@ -1,5 +1,7 @@
 """
-Handles lifecycle events:
+Lifecycle event handlers — Arabic UI (V2).
+
+Events:
   - Bot added to / removed from a group or channel
   - New member joins a group (welcome message)
   - Member leaves a group (log)
@@ -11,7 +13,7 @@ from __future__ import annotations
 
 from aiogram import Bot, Router
 from aiogram.filters import ChatMemberUpdatedFilter, IS_MEMBER, IS_NOT_MEMBER
-from aiogram.types import ChatMemberUpdated, Message
+from aiogram.types import ChatMemberUpdated
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.services.group_service import (
@@ -19,6 +21,7 @@ from bot.services.group_service import (
     register_channel,
     register_group,
 )
+from bot.strings.ar import S
 from database import repository as repo
 from utils.helpers import format_welcome, mention_html
 from utils.logger import get_logger
@@ -35,17 +38,14 @@ router = Router(name="group_events")
 async def bot_joined_chat(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
     """Fired when the bot itself joins a group or channel."""
     chat = event.chat
-    chat_type = chat.type  # "group", "supergroup", "channel"
+    chat_type = chat.type
 
     if chat_type in ("group", "supergroup"):
         await register_group(session, bot, chat.id)
         try:
             await bot.send_message(
                 chat.id,
-                "👋 Thanks for adding me!\n\n"
-                "I'm your <b>Moderation Bot</b>. "
-                "Grant me Administrator permissions so I can protect this group.\n\n"
-                "Use /start in our private chat to open the control panel.",
+                S.bot_joined_msg,
                 parse_mode="HTML",
             )
         except Exception as exc:
@@ -75,7 +75,6 @@ async def new_member_joined(event: ChatMemberUpdated, bot: Bot, session: AsyncSe
     chat_id = event.chat.id
     user = event.new_chat_member.user
 
-    # Skip bots
     if user.is_bot:
         return
 
@@ -92,7 +91,7 @@ async def new_member_joined(event: ChatMemberUpdated, bot: Bot, session: AsyncSe
         group_id=chat_id,
         event_type="user_joined",
         target_id=user.id,
-        details=f"{user.first_name} joined",
+        details=f"انضم {user.first_name}",
     )
 
     settings = await repo.get_settings(session, chat_id)
@@ -108,7 +107,7 @@ async def new_member_joined(event: ChatMemberUpdated, bot: Bot, session: AsyncSe
             mention = mention_html(user.id, user.first_name)
             await bot.send_message(
                 chat_id,
-                f"{mention}, {text}",
+                f"{mention}، {text}",
                 parse_mode="HTML",
             )
         except Exception as exc:
@@ -130,5 +129,5 @@ async def member_left(event: ChatMemberUpdated, session: AsyncSession) -> None:
         group_id=event.chat.id,
         event_type="user_left",
         target_id=user.id,
-        details=f"{user.first_name} left",
+        details=f"غادر {user.first_name}",
     )

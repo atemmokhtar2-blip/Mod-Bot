@@ -1,9 +1,9 @@
 """
-Data-access layer (repository pattern).
+Data-access layer (repository pattern) — Version 2.
 All DB reads and writes go through these functions.
 Handlers and services must NOT build ORM queries directly.
 
-Future: add caching layer (Redis), pagination helpers, bulk-insert optimisations.
+Future: caching layer (Redis), pagination helpers, bulk-insert optimisations.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from database.models import (
     Statistic,
     User,
     Warning,
+    WarningHistory,
 )
 from utils.logger import get_logger
 
@@ -81,7 +82,6 @@ async def upsert_group(session: AsyncSession, *, group_id: int, title: str,
     await session.commit()
     group = await session.get(Group, group_id)
 
-    # Ensure default settings and all filters exist
     await _ensure_group_settings(session, group_id)
     await _ensure_group_filters(session, group_id)
     return group
@@ -264,7 +264,7 @@ async def is_admin_in_db(session: AsyncSession, group_id: int, user_id: int) -> 
 
 
 # ============================================================
-# Warnings
+# Warnings  (counter row)
 # ============================================================
 
 async def get_warnings(session: AsyncSession, group_id: int, user_id: int) -> Warning | None:
@@ -275,21 +275,34 @@ async def get_warnings(session: AsyncSession, group_id: int, user_id: int) -> Wa
 
 
 async def add_warning(session: AsyncSession, group_id: int, user_id: int,
-                      reason: str | None = None) -> int:
-    """Increment warning counter and return the new count."""
+                      reason: str | None = None,
+                      actor_id: int | None = None) -> int:
+    """Increment warning counter, record history, return the new count."""
     existing = await get_warnings(session, group_id, user_id)
+    now = datetime.now(timezone.utc)
+
     if existing:
         new_count = existing.count + 1
         await session.execute(
             update(Warning)
             .where(Warning.group_id == group_id, Warning.user_id == user_id)
-            .values(count=new_count, last_reason=reason,
-                    last_warned_at=datetime.now(timezone.utc))
+            .values(count=new_count, last_reason=reason, last_warned_at=now)
         )
     else:
-        session.add(Warning(group_id=group_id, user_id=user_id, count=1,
-                            last_reason=reason, last_warned_at=datetime.now(timezone.utc)))
         new_count = 1
+        session.add(Warning(group_id=group_id, user_id=user_id, count=1,
+                            last_reason=reason, last_warned_at=now))
+
+    # V2: always record an individual history entry
+    session.add(WarningHistory(
+        group_id=group_id,
+        user_id=user_id,
+        actor_id=actor_id,
+        reason=reason,
+        count_at_time=new_count,
+        created_at=now,
+    ))
+
     await session.commit()
     return new_count
 
@@ -301,6 +314,18 @@ async def reset_warnings(session: AsyncSession, group_id: int, user_id: int) -> 
         .values(count=0, last_reason=None, last_warned_at=None)
     )
     await session.commit()
+
+
+async def get_warning_history(session: AsyncSession, group_id: int, user_id: int,
+                               limit: int = 10) -> list[WarningHistory]:
+    """Return the most recent warning history entries for a user in a group."""
+    result = await session.execute(
+        select(WarningHistory)
+        .where(WarningHistory.group_id == group_id, WarningHistory.user_id == user_id)
+        .order_by(WarningHistory.created_at.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
 
 
 # ============================================================
@@ -331,14 +356,13 @@ async def get_recent_logs(session: AsyncSession, group_id: int, limit: int = 20)
 # Statistics
 # ============================================================
 
-async def _today_str() -> str:
+def _today_str() -> str:
     return date.today().isoformat()
 
 
 async def increment_stat(session: AsyncSession, group_id: int, field: str,
                           amount: int = 1) -> None:
-    today = await _today_str()
-    # Upsert today's row first
+    today = _today_str()
     stmt = pg_insert(Statistic).values(
         group_id=group_id, date=today
     ).on_conflict_do_nothing()
@@ -363,7 +387,7 @@ async def get_stats(session: AsyncSession, group_id: int, days: int = 7) -> list
 
 
 async def set_total_members(session: AsyncSession, group_id: int, count: int) -> None:
-    today = await _today_str()
+    today = _today_str()
     stmt = pg_insert(Statistic).values(
         group_id=group_id, date=today, total_members=count
     ).on_conflict_do_update(

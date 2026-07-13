@@ -1,5 +1,5 @@
 """
-Statistics helpers.
+Statistics service — Arabic output (V2).
 Future: weekly/monthly roll-ups, export to CSV, webhook push.
 """
 
@@ -9,6 +9,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.strings.ar import S
 from database import repository as repo
 from utils.logger import get_logger
 
@@ -28,23 +29,33 @@ async def refresh_member_count(bot: Bot, session: AsyncSession, group_id: int) -
 
 def build_stats_text(stats_rows: list, group_title: str) -> str:
     if not stats_rows:
-        return f"📊 <b>{group_title}</b>\n\nNo statistics recorded yet."
+        return (
+            S.stats_title.format(title=group_title) + "\n\n" +
+            S.stats_no_data
+        )
 
     today = stats_rows[0]
     lines = [
-        f"📊 <b>Statistics — {group_title}</b>",
+        S.stats_title.format(title=group_title),
         "",
-        f"👥 Total Members:     <b>{today.total_members}</b>",
-        f"💬 Messages Today:    <b>{today.messages_today}</b>",
-        f"🗑 Deleted Messages:  <b>{today.deleted_messages}</b>",
-        f"🔇 Muted (today):     <b>{today.muted_members}</b>",
-        f"🚫 Banned (today):    <b>{today.banned_members}</b>",
+        f"{S.stats_total_members}:   <b>{today.total_members}</b>",
+        f"{S.stats_messages}:   <b>{today.messages_today}</b>",
+        f"{S.stats_deleted}:   <b>{today.deleted_messages}</b>",
+        f"{S.stats_muted}:   <b>{today.muted_members}</b>",
+        f"{S.stats_banned}:   <b>{today.banned_members}</b>",
+        f"{S.stats_warned}:   <b>{today.warned_members}</b>",
     ]
+
     if len(stats_rows) > 1:
         lines.append("")
-        lines.append("📅 <b>Last 7 days:</b>")
+        lines.append(S.stats_last_7)
         for row in stats_rows:
             lines.append(
-                f"  {row.date}: 💬 {row.messages_today} | 🗑 {row.deleted_messages} | 🚫 {row.banned_members}"
+                f"  📅 {row.date}: "
+                f"💬 {row.messages_today} | "
+                f"🗑️ {row.deleted_messages} | "
+                f"⚠️ {row.warned_members} | "
+                f"🚫 {row.banned_members}"
             )
+
     return "\n".join(lines)
