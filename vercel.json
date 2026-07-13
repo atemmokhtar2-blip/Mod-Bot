@@ -1,0 +1,32 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+
+  "installCommand": "pnpm install --frozen-lockfile",
+
+  "functions": {
+    "api/webhook.py": {
+      "runtime": "python3.12",
+      "maxDuration": 30,
+      "memory": 512
+    },
+    "api/[...slug].ts": {
+      "maxDuration": 30,
+      "memory": 256
+    }
+  },
+
+  "rewrites": [
+    { "source": "/telegram/webhook", "destination": "/api/webhook" }
+  ],
+
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options",        "value": "DENY" }
+      ]
+    }
+  ]
+}
