@@ -1,0 +1,10 @@
+# Telegram Bot
+aiogram==3.13.1
+
+# Database
+SQLAlchemy==2.0.51
+asyncpg==0.31.0
+greenlet==3.5.3
+
+# Utilities
+pytz==2026.2

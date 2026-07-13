@@ -1,82 +1,108 @@
-# Telegram Moderation Bot — Version 1
+# بوت الإشراف العربي — النسخة 3
 
-A professional, modular Telegram moderation and management bot built with Python, aiogram 3, and PostgreSQL.
+بوت إشراف احترافي لمجموعات Telegram مبني بـ Python، aiogram 3، وPostgreSQL.
 
-## Quick Start
+---
 
-1. Set `TELEGRAM_BOT_TOKEN` in Replit Secrets
-2. The workflow starts the bot automatically
+## النشر على Zeabur
 
-## Architecture
+### 1. أنشئ مشروعاً جديداً على Zeabur
+
+ادخل إلى [zeabur.com](https://zeabur.com) → **New Project**.
+
+### 2. أضف خدمة PostgreSQL
+
+داخل المشروع: **Add Service → Database → PostgreSQL**.
+
+بعد الإنشاء، انسخ **Internal Connection String** من تبويب Connection.
+
+### 3. أضف خدمة البوت
+
+**Add Service → Git → اختر المستودع**.
+
+Zeabur يكتشف `requirements.txt` و`zbpack.json` تلقائياً.
+
+### 4. اضبط متغيرات البيئة
+
+في تبويب **Variables** لخدمة البوت:
+
+| المتغير | القيمة |
+|---------|--------|
+| `TELEGRAM_BOT_TOKEN` | توكن البوت من @BotFather |
+| `DATABASE_URL` | Internal Connection String من خدمة PostgreSQL |
+| `DATABASE_SSL` | `false` (الشبكة الداخلية لا تحتاج SSL) |
+| `LOG_LEVEL` | `INFO` |
+
+> **ملاحظة:** إذا استخدمت قاعدة بيانات خارجية (Supabase، Neon، إلخ) اضبط `DATABASE_SSL=true`.
+
+### 5. انشر
+
+اضغط **Deploy** — Zeabur سيثبّت الاعتماديات ويشغّل `python main.py` تلقائياً.
+
+---
+
+## الصلاحيات المطلوبة في المجموعة
+
+أضف البوت مشرفاً مع الصلاحيات التالية:
+- حذف الرسائل
+- حظر الأعضاء
+- تقييد الأعضاء
+- تثبيت الرسائل
+
+---
+
+## متغيرات البيئة الكاملة
+
+| المتغير | مطلوب | الوصف |
+|---------|-------|-------|
+| `TELEGRAM_BOT_TOKEN` | ✅ | من @BotFather |
+| `DATABASE_URL` | ✅ | رابط اتصال PostgreSQL |
+| `DATABASE_SSL` | ❌ | `true` لقواعد البيانات الخارجية، `false` للشبكة الداخلية |
+| `LOG_LEVEL` | ❌ | `INFO` افتراضياً |
+
+---
+
+## هيكل المشروع
 
 ```
 artifacts/telegram-bot/
-├── main.py                  # Entry point, wires everything together
-├── config.py                # Environment variable configuration
+├── main.py                     # نقطة الدخول
+├── config.py                   # إعدادات متغيرات البيئة
+├── requirements.txt            # الاعتماديات
+├── zbpack.json                 # إعدادات Zeabur
 ├── database/
-│   ├── models.py            # SQLAlchemy ORM models (9 tables)
-│   ├── connection.py        # Async engine + session factory
-│   └── repository.py       # All DB reads/writes (repository pattern)
+│   ├── models.py               # نماذج SQLAlchemy (9 جداول)
+│   ├── connection.py           # محرك async + جلسة
+│   └── repository.py          # جميع عمليات قاعدة البيانات
 ├── bot/
 │   ├── handlers/
-│   │   ├── start.py         # /start command → private dashboard
-│   │   ├── group_events.py  # Bot added/removed, join/leave events
-│   │   ├── message_filter.py# Auto-moderation (all group messages)
-│   │   ├── admin_commands.py# /ban /mute /warn /del /pin etc.
-│   │   └── callbacks.py     # All inline keyboard callbacks
-│   ├── keyboards/
-│   │   └── builder.py       # Every keyboard in the bot
-│   ├── middlewares/
-│   │   └── db_middleware.py # DB session injection
-│   ├── filters/
-│   │   └── admin_filter.py  # IsGroupOwner, IsGroupAdmin, IsBotAdmin
-│   └── services/
-│       ├── group_service.py    # Group/channel registration
-│       ├── moderation_service.py # ban/unban/mute/unmute/kick/delete/pin
-│       ├── warning_service.py  # Warning counter + auto-punishment
-│       └── stats_service.py    # Statistics helpers
+│   │   ├── start.py            # /start → لوحة التحكم
+│   │   ├── group_events.py     # أحداث المجموعة
+│   │   ├── message_filter.py   # الإشراف التلقائي
+│   │   ├── admin_commands.py   # /ban /mute /warn ...
+│   │   └── callbacks.py        # ردود الأزرار المضمنة
+│   ├── keyboards/builder.py    # جميع لوحات المفاتيح
+│   ├── middlewares/            # حقن جلسة قاعدة البيانات
+│   ├── filters/                # فلاتر الأذونات
+│   ├── services/               # منطق الأعمال
+│   └── strings/ar.py           # جميع النصوص بالعربية
 └── utils/
-    ├── logger.py            # Structured logging setup
-    └── helpers.py           # Text, time, and Telegram helpers
+    ├── logger.py               # إعداد التسجيل
+    └── helpers.py              # أدوات مساعدة
 ```
 
-## Features
+---
 
-- **Automatic group registration** when bot is added
-- **11 moderation filters** (flood, spam, links, emojis, bad words, …)
-- **Configurable actions** per filter: ignore / delete / warn / mute / kick / ban
-- **Warning system** with auto-punishment at configurable limit
-- **Admin commands**: /ban, /unban, /mute, /unmute, /warn, /resetwarns, /del, /pin, /unpin, /info
-- **Welcome messages** with {first_name} {username} {group_name} placeholders
-- **Per-group settings** via inline keyboard dashboard
-- **Statistics** (members, messages, deletions, bans)
-- **Audit log** of all moderation events
+## جداول قاعدة البيانات
 
-## Database Tables
-
-| Table | Purpose |
-|-------|---------|
-| users | All known Telegram users |
-| groups | Registered groups/supergroups |
-| channels | Registered channels |
-| admins | Per-group bot admin grants |
-| group_settings | Per-group configuration |
-| filters | Per-group filter enable/action |
-| warnings | Warning counters per user per group |
-| logs | Audit trail of all events |
-| statistics | Daily counters per group |
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| TELEGRAM_BOT_TOKEN | ✅ | From @BotFather |
-| DATABASE_URL | ✅ | Auto-provided by Replit |
-| LOG_LEVEL | ❌ | INFO (default) |
-
-## Adding the Bot to a Group
-
-1. Add `@YourBot` to your group
-2. Make it **Administrator** with: Delete Messages, Ban Users, Restrict Members, Pin Messages
-3. Open a private chat with the bot and send `/start`
-4. Select your group from the dashboard
+| الجدول | الغرض |
+|--------|-------|
+| users | جميع مستخدمي Telegram المعروفين |
+| groups | المجموعات المسجّلة |
+| channels | القنوات المسجّلة |
+| admins | صلاحيات المشرفين لكل مجموعة |
+| group_settings | إعدادات كل مجموعة |
+| filters | فلاتر كل مجموعة مع الإجراء المطلوب |
+| warnings | عدادات التحذيرات لكل مستخدم/مجموعة |
+| logs | سجل تدقيق لجميع الأحداث |
+| statistics | إحصائيات يومية لكل مجموعة |

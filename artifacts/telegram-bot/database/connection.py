@@ -4,6 +4,8 @@ Uses SQLAlchemy 2.x async engine + session factory.
 Future: read-replica support, connection pooling tuning, pgBouncer.
 """
 
+import os
+
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -18,14 +20,20 @@ log = get_logger(__name__)
 
 _config = load_config()
 
+# SSL control:
+#   DATABASE_SSL=false  → disable SSL (Replit internal Postgres, local dev)
+#   DATABASE_SSL=true   → enable SSL  (Zeabur, Supabase, Railway, etc.)
+#   unset               → disable SSL (safe default for most VPS/internal DBs)
+_ssl_env = os.environ.get("DATABASE_SSL", "false").strip().lower()
+_ssl = True if _ssl_env == "true" else None
+
 engine: AsyncEngine = create_async_engine(
     _config.database_url,
     echo=False,          # set True for SQL query logging in dev
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,  # detect stale connections
-    # Replit's internal Postgres does not use SSL; disable it explicitly
-    connect_args={"ssl": None},
+    connect_args={"ssl": _ssl},
 )
 
 async_session: async_sessionmaker[AsyncSession] = async_sessionmaker(
