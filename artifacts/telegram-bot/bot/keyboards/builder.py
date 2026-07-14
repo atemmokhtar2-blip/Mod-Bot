@@ -186,6 +186,9 @@ _FILTER_LABELS: dict[str, str] = {
     "forwarded":          S.filter_forwarded,
     "mass_mention":       S.filter_mass_mention,
     "hashtag":            S.filter_hashtag,
+    # V6 — AI Protection
+    "ai_text":            S.filter_ai_text,
+    "ai_image":           S.filter_ai_image,
 }
 
 _ACTION_LABELS: dict[str, str] = {
@@ -380,9 +383,10 @@ def v4_settings_menu_kb(group_id: int) -> InlineKeyboardMarkup:
     builder.button(text=S.btn_v4_media,       callback_data=f"v4s:media:{group_id}")
     builder.button(text=S.btn_v4_channel,     callback_data=f"v4s:channel:{group_id}")
     builder.button(text=S.btn_v4_language,    callback_data=f"v4s:lang:{group_id}")
+    builder.button(text=S.btn_v4_ai,          callback_data=f"v4s:ai:{group_id}")
     builder.button(text=S.btn_v4_reset,       callback_data=f"v4s:reset:{group_id}")
     builder.row(_back_btn(f"grp:panel:{group_id}"))
-    builder.adjust(2, 2, 2, 2, 1, 1)
+    builder.adjust(2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -406,6 +410,9 @@ _V4_ALL_FILTERS = [
     ("mass_mention",       S.filter_mass_mention),
     ("hashtag",            S.filter_hashtag),
     ("bad_words",          S.filter_bad_words),
+    # V6 — AI Protection (moderation action reuses the standard punishment picker)
+    ("ai_text",            S.filter_ai_text),
+    ("ai_image",           S.filter_ai_image),
 ]
 
 
@@ -619,6 +626,63 @@ def v4_reset_confirm_kb(group_id: int) -> InlineKeyboardMarkup:
     builder.button(text="✅ نعم، إعادة الضبط", callback_data=f"v4s:reset_confirm:{group_id}")
     builder.button(text="❌ إلغاء",             callback_data=f"v4s:menu:{group_id}")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+# ---------------------------------------------------------------------------
+# V6 — AI Protection settings panel (Gemini)
+# ---------------------------------------------------------------------------
+
+def v4_ai_settings_kb(group_id: int, settings: GroupSettings) -> InlineKeyboardMarkup:
+    sensitivity_labels = {
+        "low": S.ai_sensitivity_low,
+        "medium": S.ai_sensitivity_medium,
+        "high": S.ai_sensitivity_high,
+    }
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=S.btn_ai_toggle.format(status=_status(settings.ai_enabled)),
+        callback_data=f"v4s:ai_toggle:{group_id}",
+    )
+    builder.button(
+        text=S.btn_ai_analyze_msgs.format(status=_status(settings.ai_analyze_messages)),
+        callback_data=f"v4s:ai_toggle_msgs:{group_id}",
+    )
+    builder.button(
+        text=S.btn_ai_analyze_images.format(status=_status(settings.ai_analyze_images)),
+        callback_data=f"v4s:ai_toggle_images:{group_id}",
+    )
+    builder.button(
+        text=S.btn_ai_sensitivity.format(level=sensitivity_labels.get(settings.ai_sensitivity, settings.ai_sensitivity)),
+        callback_data=f"v4s:ai_sens:{group_id}",
+    )
+    builder.button(text=S.btn_ai_status, callback_data=f"v4s:ai_status:{group_id}")
+    builder.row(_back_btn(f"v4s:menu:{group_id}"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def v4_ai_sensitivity_kb(group_id: int, current: str) -> InlineKeyboardMarkup:
+    levels = [
+        ("low", S.ai_sensitivity_low),
+        ("medium", S.ai_sensitivity_medium),
+        ("high", S.ai_sensitivity_high),
+    ]
+    builder = InlineKeyboardBuilder()
+    for level, label in levels:
+        tick = "✓ " if level == current else ""
+        builder.button(
+            text=f"{tick}{label}",
+            callback_data=f"v4s:ai_sens_set:{group_id}:{level}",
+        )
+    builder.row(_back_btn(f"v4s:ai:{group_id}"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def v4_ai_status_kb(group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(_back_btn(f"v4s:ai:{group_id}"))
     return builder.as_markup()
 
 

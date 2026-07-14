@@ -82,3 +82,22 @@ class IsBotAdmin(BaseFilter):
             return member.status == "administrator"
         except Exception:
             return False
+
+
+class IsBotOwner(BaseFilter):
+    """
+    V6: True if from_user.id is listed in BOT_OWNER_IDS (config.bot_owner_ids).
+
+    This is a bot-wide (not per-group) permission, used to gate management of
+    global resources such as the Gemini API key pool. Distinct from
+    IsGroupOwner, which is scoped to a single group's owner_id in the DB.
+    """
+
+    async def __call__(self, event: Message | CallbackQuery, **data) -> bool:
+        from config import load_config
+
+        user = event.from_user
+        if not user:
+            return False
+        config = load_config()
+        return user.id in config.bot_owner_ids

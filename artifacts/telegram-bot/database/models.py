@@ -209,6 +209,13 @@ class GroupSettings(Base):
     perm_edit_settings: Mapped[bool] = mapped_column(Boolean, default=False)
     perm_manage_admins: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # ── AI Protection (V6) — Gemini-powered moderation ──────────────────────
+    ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_analyze_messages: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_analyze_images: Mapped[bool] = mapped_column(Boolean, default=True)
+    # low | medium | high — maps to a confidence threshold in bot/ai/manager.py
+    ai_sensitivity: Mapped[str] = mapped_column(String(8), default="medium")
+
     group: Mapped["Group"] = relationship("Group", back_populates="settings")
 
 
@@ -232,7 +239,14 @@ FILTER_TYPES = [
     "forwarded",
     "mass_mention",
     "hashtag",
+    # V6 — AI Protection (Gemini text/image classification)
+    "ai_text",
+    "ai_image",
 ]
+
+AI_SENSITIVITIES = ["low", "medium", "high"]
+# Confidence threshold (0-100) an AI verdict must reach before an action fires.
+AI_SENSITIVITY_THRESHOLDS = {"low": 85, "medium": 65, "high": 45}
 
 FILTER_ACTIONS = ["ignore", "delete", "warn", "mute", "kick", "ban"]
 
@@ -347,6 +361,47 @@ class Log(Base):
     )
 
     group: Mapped["Group"] = relationship("Group", back_populates="logs")
+
+
+# ---------------------------------------------------------------------------
+# ai_provider_keys — V6: Gemini API Key Manager (multi-provider ready)
+# ---------------------------------------------------------------------------
+
+AI_PROVIDERS = ["gemini"]  # extend when adding grok/openai/claude — no other schema change needed
+
+
+class AIProviderKey(Base):
+    """
+    One row per API key registered by a bot owner. The key manager
+    (bot/ai/key_manager.py) round-robins across enabled keys for a provider
+    and silently skips/cools down keys that start failing.
+    """
+    __tablename__ = "ai_provider_keys"
+    __table_args__ = (
+        Index("ix_ai_keys_provider_enabled", "provider", "enabled"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(32), default="gemini")
+    label: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    api_key: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    success_count: Mapped[int] = mapped_column(Integer, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    def masked_key(self) -> str:
+        k = self.api_key
+        if len(k) <= 8:
+            return "•" * max(len(k), 4)
+        return f"{k[:4]}...{k[-4:]}"
 
 
 # ---------------------------------------------------------------------------

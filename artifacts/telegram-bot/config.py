@@ -41,6 +41,18 @@ class Config:
     # --- Rate limiting ---
     max_warnings_per_hour: int = 10    # per bot globally (anti-spam guard)
 
+    # --- V6: Bot-owner IDs (global resource management, e.g. AI API keys) ---
+    bot_owner_ids: frozenset[int] = field(default_factory=frozenset)
+
+
+def _parse_owner_ids(raw: str) -> frozenset[int]:
+    ids: set[int] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return frozenset(ids)
+
 
 def _adapt_db_url(url: str) -> str:
     """
@@ -75,4 +87,5 @@ def load_config() -> Config:
         bot_token=token,
         database_url=_adapt_db_url(db_url),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        bot_owner_ids=_parse_owner_ids(os.environ.get("BOT_OWNER_IDS", "")),
     )

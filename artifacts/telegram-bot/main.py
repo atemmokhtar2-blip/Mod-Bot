@@ -74,6 +74,11 @@ async def main() -> None:
         BotCommand(command="clearwords",  description="مسح جميع الكلمات المخصصة (المالك فقط)"),
     ]
 
+    # V6: Gemini key-manager commands are bot-owner-only and deliberately NOT
+    # advertised in the public group/private command menus — they manage a
+    # global, sensitive resource (API keys) and are only meant to be typed by
+    # whoever is listed in BOT_OWNER_IDS. They still work when typed manually.
+
     try:
         await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
         await bot.set_my_commands(group_commands,   scope=BotCommandScopeAllGroupChats())

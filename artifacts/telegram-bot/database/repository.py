@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import (
     Admin,
+    AIProviderKey,
     Channel,
     CustomWord,
     Donation,
@@ -212,6 +213,10 @@ async def reset_group_settings(session: AsyncSession, group_id: int) -> None:
             perm_warn=True,
             perm_edit_settings=False,
             perm_manage_admins=False,
+            ai_enabled=False,
+            ai_analyze_messages=True,
+            ai_analyze_images=True,
+            ai_sensitivity="medium",
         )
     )
     # Disable all filters
@@ -241,6 +246,9 @@ async def _ensure_group_filters(session: AsyncSession, group_id: int) -> None:
 
 
 async def get_filters(session: AsyncSession, group_id: int) -> list[Filter]:
+    # Self-heal: seed any filter types added by a newer bot version (e.g. V6's
+    # ai_text/ai_image) for groups that registered before those types existed.
+    await _ensure_group_filters(session, group_id)
     result = await session.execute(
         select(Filter).where(Filter.group_id == group_id).order_by(Filter.filter_type)
     )
@@ -609,3 +617,101 @@ async def count_donations(session: AsyncSession, user_id: int) -> int:
         .where(Donation.user_id == user_id, Donation.status == "paid")
     )
     return int(result.scalar_one() or 0)
+
+
+# ============================================================
+# AI provider keys — V6: Gemini API Key Manager
+# ============================================================
+
+async def add_ai_key(
+    session: AsyncSession, *, provider: str, api_key: str,
+    label: str | None = None, added_by: int | None = None,
+) -> AIProviderKey:
+    key_row = AIProviderKey(provider=provider, api_key=api_key, label=label, added_by=added_by)
+    session.add(key_row)
+    await session.commit()
+    return key_row
+
+
+async def list_ai_keys(session: AsyncSession, provider: str | None = None) -> list[AIProviderKey]:
+    stmt = select(AIProviderKey).order_by(AIProviderKey.id.asc())
+    if provider:
+        stmt = stmt.where(AIProviderKey.provider == provider)
+    result = await session.execute(stmt)
+    return result.scalars().all()
+
+
+async def get_ai_key(session: AsyncSession, key_id: int) -> AIProviderKey | None:
+    return await session.get(AIProviderKey, key_id)
+
+
+async def get_enabled_ai_keys(session: AsyncSession, provider: str) -> list[AIProviderKey]:
+    result = await session.execute(
+        select(AIProviderKey).where(
+            AIProviderKey.provider == provider, AIProviderKey.enabled == True
+        ).order_by(AIProviderKey.id.asc())
+    )
+    return result.scalars().all()
+
+
+async def get_ai_keys_by_ids(session: AsyncSession, ids: list[int]) -> list[AIProviderKey]:
+    if not ids:
+        return []
+    result = await session.execute(
+        select(AIProviderKey).where(AIProviderKey.id.in_(ids)).order_by(AIProviderKey.id.asc())
+    )
+    return result.scalars().all()
+
+
+async def toggle_ai_key(session: AsyncSession, key_id: int, enabled: bool) -> bool:
+    result = await session.execute(
+        update(AIProviderKey).where(AIProviderKey.id == key_id).values(enabled=enabled)
+    )
+    await session.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def delete_ai_key(session: AsyncSession, key_id: int) -> bool:
+    result = await session.execute(delete(AIProviderKey).where(AIProviderKey.id == key_id))
+    await session.commit()
+    return (result.rowcount or 0) > 0
+
+
+async def record_ai_key_success(session: AsyncSession, key_id: int) -> None:
+    now = datetime.now(timezone.utc)
+    await session.execute(
+        update(AIProviderKey).where(AIProviderKey.id == key_id).values(
+            usage_count=AIProviderKey.usage_count + 1,
+            success_count=AIProviderKey.success_count + 1,
+            last_used_at=now,
+            last_success_at=now,
+        )
+    )
+    await session.commit()
+
+
+async def record_ai_key_failure(session: AsyncSession, key_id: int, error: str) -> None:
+    now = datetime.now(timezone.utc)
+    await session.execute(
+        update(AIProviderKey).where(AIProviderKey.id == key_id).values(
+            usage_count=AIProviderKey.usage_count + 1,
+            failure_count=AIProviderKey.failure_count + 1,
+            last_used_at=now,
+            last_failure_at=now,
+            last_error=error[:500],
+        )
+    )
+    await session.commit()
+
+
+async def count_ai_keys(session: AsyncSession, provider: str) -> dict:
+    from sqlalchemy import func
+    total = (await session.execute(
+        select(func.count()).select_from(AIProviderKey).where(AIProviderKey.provider == provider)
+    )).scalar_one() or 0
+    enabled = (await session.execute(
+        select(func.count()).select_from(AIProviderKey).where(
+            AIProviderKey.provider == provider, AIProviderKey.enabled == True
+        )
+    )).scalar_one() or 0
+    return {"total": int(total), "enabled": int(enabled)}

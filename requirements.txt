@@ -14,3 +14,4 @@ asyncpg
 python-dotenv
 pytz
 sqlalchemy[asyncio]
+google-genai

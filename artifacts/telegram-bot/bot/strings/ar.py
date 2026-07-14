@@ -568,6 +568,8 @@ class S:
     auto_forwarded     = "↩️ <a href=\"tg://user?id={uid}\">{name}</a> — إعادة التوجيه ممنوعة."
     auto_mass_mention  = "📢 <a href=\"tg://user?id={uid}\">{name}</a> — منشن جماعي ممنوع."
     auto_hashtag       = "#️⃣ <a href=\"tg://user?id={uid}\">{name}</a> — هاشتاق ممنوع."
+    auto_ai_text       = "🧠 <a href=\"tg://user?id={uid}\">{name}</a> — محتوى مخالف (تم رصده بالذكاء الاصطناعي)."
+    auto_ai_image      = "🧠 <a href=\"tg://user?id={uid}\">{name}</a> — صورة مخالفة (تم رصدها بالذكاء الاصطناعي)."
 
     auto_warn_notice   = "⚠️ تحذير <b>{count}/{limit}</b> — {reason}"
     auto_punished      = "⚠️ <a href=\"tg://user?id={uid}\">{name}</a> وصل لحد التحذيرات — تم تطبيق العقوبة التلقائية."
@@ -692,4 +694,87 @@ class S:
         "دعمك يساهم في استمرار المشروع وتطويره باستمرار. 💙\n\n"
         "🙏 نقدّر ثقتك بنا.\n"
         "════════════════════"
+    )
+
+    # ─── V6: AI Protection (Gemini) ─────────────────────────────────────────────
+    filter_ai_text  = "🧠 تحليل الرسائل بالذكاء الاصطناعي"
+    filter_ai_image = "🧠 تحليل الصور بالذكاء الاصطناعي"
+
+    btn_v4_ai = "🧠 الذكاء الاصطناعي"
+
+    ai_settings_title = (
+        "════════════════════\n"
+        "🧠 <b>نظام الحماية بالذكاء الاصطناعي</b>\n\n"
+        "المجموعة: <b>{title}</b>\n\n"
+        "يستخدم هذا النظام Gemini AI لتحليل الرسائل والصور واكتشاف:\n"
+        "الشتائم، التحرش، خطاب الكراهية، التهديدات، الاحتيال، السبام، "
+        "الإعلانات، الروابط المشبوهة، ومحاولات تجاوز الفلاتر.\n\n"
+        "الحالة: {status}\n"
+        "تحليل الرسائل: {msg_status}\n"
+        "تحليل الصور: {img_status}\n"
+        "الحساسية: <b>{sensitivity}</b>\n"
+        "════════════════════"
+    )
+
+    btn_ai_toggle          = "{status} تفعيل الذكاء الاصطناعي"
+    btn_ai_analyze_msgs    = "{status} تحليل الرسائل"
+    btn_ai_analyze_images  = "{status} تحليل الصور"
+    btn_ai_sensitivity     = "🎛️ الحساسية: {level}"
+    btn_ai_status          = "📊 حالة النظام"
+
+    ai_sensitivity_title = (
+        "════════════════════\n"
+        "🎛️ <b>مستوى حساسية الذكاء الاصطناعي</b>\n\n"
+        "منخفضة: يتصرف فقط عند تأكد عالٍ جداً (أقل عدد إجراءات).\n"
+        "متوسطة: توازن بين الدقة والحساسية (موصى بها).\n"
+        "عالية: يتصرف عند أدنى شك (أكثر عدد إجراءات، وقد يزيد الإنذارات الخاطئة).\n"
+        "════════════════════"
+    )
+    ai_sensitivity_low    = "🟢 منخفضة"
+    ai_sensitivity_medium = "🟡 متوسطة"
+    ai_sensitivity_high   = "🔴 عالية"
+
+    ai_status_title = (
+        "════════════════════\n"
+        "📊 <b>حالة نظام الذكاء الاصطناعي</b>\n\n"
+        "المفاتيح المفعّلة: <b>{enabled_keys}</b> / {total_keys}\n"
+        "الحالة العامة: {overall_status}\n"
+        "════════════════════"
+    )
+    ai_status_ok       = "🟢 يعمل بشكل طبيعي"
+    ai_status_no_keys  = "🔴 لا توجد مفاتيح Gemini مفعّلة — الذكاء الاصطناعي متوقف مؤقتاً"
+
+    # ─── V6: Bot-owner Gemini key-manager commands ──────────────────────────────
+    ai_admin_not_owner = "❌ هذا الأمر مخصص لمالك البوت فقط."
+    ai_admin_addkey_usage = (
+        "📝 <b>إضافة مفتاح Gemini API</b>\n\n"
+        "الاستخدام: <code>/addaikey المفتاح [تسمية اختيارية]</code>\n\n"
+        "⚠️ سيتم حذف رسالتك تلقائياً بعد الإضافة لحماية المفتاح."
+    )
+    ai_admin_key_added = "✅ تم إضافة مفتاح Gemini جديد (#{key_id}) بنجاح."
+    ai_admin_key_added_dm_fallback = (
+        "✅ تم إضافة مفتاح Gemini جديد (#{key_id}) بنجاح.\n"
+        "⚠️ تعذّر حذف رسالتك التي تحتوي على المفتاح — يُفضّل حذفها يدوياً الآن."
+    )
+    ai_admin_no_keys = "📭 لا توجد أي مفاتيح Gemini مسجّلة بعد. أضف واحداً باستخدام <code>/addaikey</code>."
+    ai_admin_keys_list_header = "🔑 <b>مفاتيح Gemini API</b>\n\n"
+    ai_admin_key_row = (
+        "#{id} — {status}\n"
+        "🏷️ {label}\n"
+        "🔒 {masked}\n"
+        "📊 استخدام: {usage} | ✅ نجاح: {success} | ❌ فشل: {failure}\n"
+        "────────────────────\n"
+    )
+    ai_admin_key_status_enabled  = "🟢 مفعّل"
+    ai_admin_key_status_disabled = "🔴 معطّل"
+    ai_admin_togglekey_usage = "الاستخدام: <code>/togglekey رقم_المفتاح</code>"
+    ai_admin_key_not_found = "❌ لا يوجد مفتاح بهذا الرقم."
+    ai_admin_key_enabled = "✅ تم تفعيل المفتاح #{key_id}."
+    ai_admin_key_disabled = "🔴 تم تعطيل المفتاح #{key_id}."
+    ai_admin_delkey_usage = "الاستخدام: <code>/delkey رقم_المفتاح</code>"
+    ai_admin_key_deleted = "🗑️ تم حذف المفتاح #{key_id}."
+    ai_admin_aistatus = (
+        "📊 <b>حالة نظام الذكاء الاصطناعي (عام)</b>\n\n"
+        "إجمالي المفاتيح: <b>{total}</b>\n"
+        "المفاتيح المفعّلة: <b>{enabled}</b>\n"
     )

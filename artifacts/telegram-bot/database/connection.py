@@ -113,6 +113,33 @@ async def init_db() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS ix_donations_user ON donations (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_donations_created ON donations (created_at)",
+
+        # V6: AI Protection settings (per-group)
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_analyze_messages BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_analyze_images BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_sensitivity VARCHAR(8) DEFAULT 'medium'",
+
+        # V6: Gemini AI provider key manager (global, bot-owner managed)
+        """
+        CREATE TABLE IF NOT EXISTS ai_provider_keys (
+            id               SERIAL PRIMARY KEY,
+            provider         VARCHAR(32) NOT NULL DEFAULT 'gemini',
+            label            VARCHAR(64),
+            api_key          TEXT NOT NULL,
+            enabled          BOOLEAN NOT NULL DEFAULT TRUE,
+            added_by         BIGINT,
+            added_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            usage_count      INTEGER NOT NULL DEFAULT 0,
+            success_count    INTEGER NOT NULL DEFAULT 0,
+            failure_count    INTEGER NOT NULL DEFAULT 0,
+            last_used_at     TIMESTAMPTZ,
+            last_success_at  TIMESTAMPTZ,
+            last_failure_at  TIMESTAMPTZ,
+            last_error       TEXT
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_ai_keys_provider_enabled ON ai_provider_keys (provider, enabled)",
     ]
 
     async with engine.begin() as conn:
@@ -122,4 +149,4 @@ async def init_db() -> None:
             except Exception as exc:
                 log.warning("Migration skipped: %s", exc)
 
-    log.info("Database tables initialised (V5).")
+    log.info("Database tables initialised (V6).")

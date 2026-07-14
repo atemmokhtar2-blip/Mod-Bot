@@ -38,11 +38,12 @@ from aiogram import Bot, Router, F
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.ai.manager import ai_manager
 from bot.services import moderation_service as mod
 from bot.services.warning_service import warn_user
 from bot.strings.ar import S
 from database import repository as repo
-from database.models import Filter
+from database.models import AI_SENSITIVITY_THRESHOLDS, Filter
 from utils.helpers import (
     count_emojis,
     has_advertisement,
@@ -239,8 +240,8 @@ async def _check_media_locks(
     bot: Bot,
     session: AsyncSession,
     message: Message,
+    settings,
 ) -> bool:
-    settings = await repo.get_settings(session, message.chat.id)
     if not settings:
         return False
 
@@ -285,6 +286,98 @@ async def _check_media_locks(
 
 
 # ---------------------------------------------------------------------------
+# V6 — AI Protection (Gemini) — never raises; silently skips on any failure.
+# ---------------------------------------------------------------------------
+
+async def _handle_ai_verdict(
+    session: AsyncSession,
+    chat_id: int,
+    user_id: int,
+    filter_type: str,
+    verdict,
+    threshold: int,
+    act_fn,
+) -> bool:
+    """Apply moderation action for a VIOLATION verdict; log SUSPICIOUS only."""
+    if verdict is None:
+        return False
+
+    if verdict.is_violation and verdict.confidence >= threshold:
+        reason = f"ai:{verdict.reason}" if verdict.reason else "ai_violation"
+        return await act_fn(filter_type, reason)
+
+    if verdict.is_suspicious:
+        await repo.add_log(
+            session,
+            group_id=chat_id,
+            event_type="filter_triggered",
+            target_id=user_id,
+            details=(
+                f"ai_suspicious filter={filter_type} confidence={verdict.confidence} "
+                f"reason={verdict.reason} recommended={verdict.recommended_action}"
+            ),
+        )
+    return False
+
+
+async def _run_ai_image_check(
+    bot: Bot,
+    session: AsyncSession,
+    message: Message,
+    settings,
+    fmap: dict[str, Filter],
+    act_fn,
+) -> bool:
+    if not (settings and settings.ai_enabled and settings.ai_analyze_images):
+        return False
+    if not message.photo:
+        return False
+
+    f_ai_img = fmap.get("ai_image")
+    if not f_ai_img or not f_ai_img.enabled or f_ai_img.action == "ignore":
+        return False
+
+    try:
+        from io import BytesIO
+        buf = BytesIO()
+        await bot.download(message.photo[-1], destination=buf)
+        image_bytes = buf.getvalue()
+    except Exception as exc:
+        log.warning("AI image download failed: %s", exc)
+        return False
+
+    verdict = await ai_manager.analyze_image(session, image_bytes, mime_type="image/jpeg")
+    threshold = AI_SENSITIVITY_THRESHOLDS.get(settings.ai_sensitivity, 65)
+    return await _handle_ai_verdict(
+        session, message.chat.id, message.from_user.id, "ai_image", verdict, threshold, act_fn,
+    )
+
+
+async def _run_ai_text_check(
+    session: AsyncSession,
+    message: Message,
+    text: str,
+    settings,
+    fmap: dict[str, Filter],
+    act_fn,
+) -> bool:
+    if not (settings and settings.ai_enabled and settings.ai_analyze_messages):
+        return False
+    if not text or not text.strip():
+        return False
+
+    f_ai_text = fmap.get("ai_text")
+    if not f_ai_text or not f_ai_text.enabled or f_ai_text.action == "ignore":
+        return False
+
+    verdict = await ai_manager.analyze_text(session, text)
+    threshold = AI_SENSITIVITY_THRESHOLDS.get(settings.ai_sensitivity, 65)
+    return await _handle_ai_verdict(
+        session, message.chat.id, message.from_user.id, "ai_text", verdict, threshold, act_fn,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main handler
 # ---------------------------------------------------------------------------
 
@@ -315,16 +408,16 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
 
     await repo.increment_stat(session, chat_id, "messages_today")
 
-    # ── V4: Media locks ─────────────────────────────────────────────────────
-    if await _check_media_locks(bot, session, message):
-        return
-
-    text = message.text or message.caption or ""
-
     filters  = await repo.get_filters(session, chat_id)
     fmap     = _build_filter_map(filters)
     settings = await repo.get_settings(session, chat_id)
     mute_duration = settings.mute_duration if settings else 3600
+
+    # ── V4: Media locks ─────────────────────────────────────────────────────
+    if await _check_media_locks(bot, session, message, settings):
+        return
+
+    text = message.text or message.caption or ""
 
     async def act(filter_type: str, reason: str, notify_tpl: Optional[str] = None) -> bool:
         """Apply the configured action for a filter; return True if message was acted on."""
@@ -346,6 +439,15 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
             details=f"filter={filter_type} action={f.action} reason={reason}",
         )
         return True
+
+    # ════════════════════════════════════════════════════════════════════════
+    # V6: AI IMAGE ANALYSIS — runs early, right after media locks, before any
+    #     text filter. Only invoked when AI + image analysis are enabled for
+    #     this group and the ai_image filter itself is enabled with a
+    #     non-ignore action. Never raises — failures are silently skipped.
+    # ════════════════════════════════════════════════════════════════════════
+    if await _run_ai_image_check(bot, session, message, settings, fmap, act):
+        return
 
     # ════════════════════════════════════════════════════════════════════════
     # 1. BAD WORDS — runs FIRST, highest priority
@@ -448,7 +550,13 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
             return
 
     # ════════════════════════════════════════════════════════════════════════
-    # 13. SPAM / INSULTS — AI classifier placeholder
+    # 13. AI TEXT ANALYSIS (V6) — runs last, after all deterministic filters.
+    #     Detects profanity, insults, harassment, hate speech, threats, scams,
+    #     spam, ads, suspicious links, filter-bypass attempts, and toxicity.
+    #     Only invoked when AI + message analysis are enabled for this group
+    #     and the ai_text filter itself is enabled with a non-ignore action.
+    #     Never raises — failures are silently skipped so the bot keeps working.
     # ════════════════════════════════════════════════════════════════════════
-    # f_spam    = fmap.get("spam")    → future AI integration
-    # f_insults = fmap.get("insults") → future AI integration
+    if text:
+        if await _run_ai_text_check(session, message, text, settings, fmap, act):
+            return

@@ -51,6 +51,9 @@ from bot.keyboards.builder import (
     _V4_MEDIA_LOCKS,
     _V4_PERMS,
     back_kb,
+    v4_ai_sensitivity_kb,
+    v4_ai_settings_kb,
+    v4_ai_status_kb,
     v4_channel_list_kb,
     v4_channel_panel_kb,
     v4_goodbye_kb,
@@ -804,6 +807,147 @@ async def cb_v4_lang_set(cb: CallbackQuery, session: AsyncSession) -> None:
         cb,
         S.v4_language_title.format(title=title, current=lang_name),
         reply_markup=v4_language_kb(group_id, lang_code),
+    )
+
+
+# ---------------------------------------------------------------------------
+# ── V6: AI Protection (Gemini) ────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+
+_AI_SENS_LABELS = {"low": S.ai_sensitivity_low, "medium": S.ai_sensitivity_medium, "high": S.ai_sensitivity_high}
+
+
+def _ai_status_str(enabled: bool) -> str:
+    return S.enabled if enabled else S.disabled
+
+
+@router.callback_query(F.data.startswith("v4s:ai:"))
+async def cb_v4_ai(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    group    = await repo.get_group(session, group_id)
+    settings = await repo.get_settings(session, group_id)
+    title    = escape_html(group.title) if group else str(group_id)
+    await _edit(
+        cb,
+        S.ai_settings_title.format(
+            title=title,
+            status=_ai_status_str(settings.ai_enabled),
+            msg_status=_ai_status_str(settings.ai_analyze_messages),
+            img_status=_ai_status_str(settings.ai_analyze_images),
+            sensitivity=_AI_SENS_LABELS.get(settings.ai_sensitivity, settings.ai_sensitivity),
+        ),
+        reply_markup=v4_ai_settings_kb(group_id, settings),
+    )
+
+
+async def _rerender_ai_panel(cb: CallbackQuery, session: AsyncSession, group_id: int) -> None:
+    group    = await repo.get_group(session, group_id)
+    settings = await repo.get_settings(session, group_id)
+    title    = escape_html(group.title) if group else str(group_id)
+    await _edit(
+        cb,
+        S.ai_settings_title.format(
+            title=title,
+            status=_ai_status_str(settings.ai_enabled),
+            msg_status=_ai_status_str(settings.ai_analyze_messages),
+            img_status=_ai_status_str(settings.ai_analyze_images),
+            sensitivity=_AI_SENS_LABELS.get(settings.ai_sensitivity, settings.ai_sensitivity),
+        ),
+        reply_markup=v4_ai_settings_kb(group_id, settings),
+    )
+
+
+@router.callback_query(F.data.startswith("v4s:ai_toggle:"))
+async def cb_v4_ai_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings = await repo.get_settings(session, group_id)
+    new_state = not settings.ai_enabled
+    await repo.update_settings(session, group_id, ai_enabled=new_state)
+    await repo.add_log(
+        session, group_id=group_id, event_type="settings_changed",
+        actor_id=cb.from_user.id, details=f"ai_enabled → {new_state}",
+    )
+    await _rerender_ai_panel(cb, session, group_id)
+
+
+@router.callback_query(F.data.startswith("v4s:ai_toggle_msgs:"))
+async def cb_v4_ai_toggle_msgs(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings = await repo.get_settings(session, group_id)
+    await repo.update_settings(session, group_id, ai_analyze_messages=not settings.ai_analyze_messages)
+    await _rerender_ai_panel(cb, session, group_id)
+
+
+@router.callback_query(F.data.startswith("v4s:ai_toggle_images:"))
+async def cb_v4_ai_toggle_images(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings = await repo.get_settings(session, group_id)
+    await repo.update_settings(session, group_id, ai_analyze_images=not settings.ai_analyze_images)
+    await _rerender_ai_panel(cb, session, group_id)
+
+
+@router.callback_query(F.data.startswith("v4s:ai_sens:"))
+async def cb_v4_ai_sens(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings = await repo.get_settings(session, group_id)
+    await _edit(
+        cb,
+        S.ai_sensitivity_title,
+        reply_markup=v4_ai_sensitivity_kb(group_id, settings.ai_sensitivity),
+    )
+
+
+@router.callback_query(F.data.startswith("v4s:ai_sens_set:"))
+async def cb_v4_ai_sens_set(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    _, _, group_id_str, level = cb.data.split(":", 3)
+    group_id = int(group_id_str)
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    await repo.update_settings(session, group_id, ai_sensitivity=level)
+    await repo.add_log(
+        session, group_id=group_id, event_type="settings_changed",
+        actor_id=cb.from_user.id, details=f"ai_sensitivity → {level}",
+    )
+    await _rerender_ai_panel(cb, session, group_id)
+
+
+@router.callback_query(F.data.startswith("v4s:ai_status:"))
+async def cb_v4_ai_status(cb: CallbackQuery, session: AsyncSession) -> None:
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    counts = await repo.count_ai_keys(session, "gemini")
+    overall = S.ai_status_ok if counts["enabled"] > 0 else S.ai_status_no_keys
+    await _edit(
+        cb,
+        S.ai_status_title.format(
+            enabled_keys=counts["enabled"], total_keys=counts["total"], overall_status=overall,
+        ),
+        reply_markup=v4_ai_status_kb(group_id),
     )
 
 
