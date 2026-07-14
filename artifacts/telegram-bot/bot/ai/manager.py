@@ -1,15 +1,21 @@
 """
-AI Protection Manager — the single entrypoint the rest of the bot calls.
+AI Protection Manager — the single entrypoint the rest of the bot calls — V7.
 
     from bot.ai.manager import ai_manager
     verdict = await ai_manager.analyze_text(session, text)
     verdict = await ai_manager.analyze_image(session, image_bytes, mime_type)
+    verdict = await ai_manager.analyze_links(session, url_string)   # V7
 
-Both return an AIVerdict or None. None means "AI unavailable" (no configured
-keys, or every key attempt failed) — callers MUST treat that as "skip the AI
-check for this message"; it is never treated as a violation and never blocks
-the rest of the filter pipeline. This is what makes the bot resilient to a
-single bad/expired/rate-limited key.
+All three return an AIVerdict or None. None means "AI unavailable" (no
+configured keys, or every key attempt failed) — callers MUST treat that as
+"skip the AI check for this message"; it is never treated as a violation and
+never blocks the rest of the filter pipeline.
+
+Architecture: PROVIDER_REGISTRY maps provider names → AIProvider instances.
+Adding a new provider (Grok, OpenAI, Claude…) means:
+  1. Create a module implementing AIProvider.
+  2. Add an entry to PROVIDER_REGISTRY.
+  No other file needs to change.
 """
 
 from __future__ import annotations
@@ -73,6 +79,21 @@ class AIProtectionManager:
         return await self._run(
             session, provider,
             lambda engine, api_key: engine.analyze_image(api_key, image_bytes, mime_type),
+        )
+
+    async def analyze_links(
+        self, session: AsyncSession, url_string: str, provider: str = DEFAULT_PROVIDER
+    ) -> AIVerdict | None:
+        """
+        V7: Classify a string of extracted URLs for safety.
+        Uses a dedicated link-safety prompt so the model focuses on URL patterns
+        rather than the broader message context.
+        """
+        if not url_string or not url_string.strip():
+            return None
+        return await self._run(
+            session, provider,
+            lambda engine, api_key: engine.analyze_links(api_key, url_string),
         )
 
 

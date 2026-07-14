@@ -75,5 +75,19 @@ class KeyManager:
     def mark_cooldown(self, key_id: int) -> None:
         self._cooldown_until[key_id] = time.monotonic() + _COOLDOWN_SECONDS
 
+    def has_cooling_down_keys(self, provider: str) -> bool:
+        """
+        V7: True if at least one key for *provider* is currently in cooldown
+        (failed recently but not yet permanently disabled). Used for the
+        🟡 جاري إعادة المحاولة system status indicator.
+        """
+        now = time.monotonic()
+        with self._lock:
+            cached = self._cache.get(provider)
+        if not cached:
+            return False
+        key_ids = cached[1]
+        return any(self._cooldown_until.get(kid, 0) > now for kid in key_ids)
+
 
 key_manager = KeyManager()

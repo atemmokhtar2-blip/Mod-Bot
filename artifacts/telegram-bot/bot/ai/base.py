@@ -52,3 +52,7 @@ class AIProvider:
 
     async def analyze_image(self, api_key: str, image_bytes: bytes, mime_type: str) -> AIVerdict:
         raise NotImplementedError
+
+    async def analyze_links(self, api_key: str, url_string: str) -> AIVerdict:
+        """V7: Classify extracted URLs for safety threats. Override in each provider."""
+        raise NotImplementedError

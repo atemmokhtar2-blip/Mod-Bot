@@ -140,6 +140,13 @@ async def init_db() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS ix_ai_keys_provider_enabled ON ai_provider_keys (provider, enabled)",
+
+        # V7: AI link analysis + multi-action support
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_analyze_links BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_action_delete BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_action_warn BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_action_mute BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_action_ban BOOLEAN DEFAULT FALSE",
     ]
 
     async with engine.begin() as conn:
@@ -149,4 +156,4 @@ async def init_db() -> None:
             except Exception as exc:
                 log.warning("Migration skipped: %s", exc)
 
-    log.info("Database tables initialised (V6).")
+    log.info("Database tables initialised (V7).")

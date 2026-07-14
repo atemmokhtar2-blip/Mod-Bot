@@ -1,5 +1,5 @@
 """
-Automatic moderation filter — Version 4.1 (Advanced Profanity Filter).
+Automatic moderation filter — Version 7 (AI Multi-Action + Link Analysis).
 
 V4.1 changes
 ------------
@@ -214,6 +214,17 @@ def _build_filter_map(filters: list[Filter]) -> dict[str, Filter]:
 _MENTION_RE = re.compile(r"@\w+")
 _HASHTAG_RE = re.compile(r"#\w+")
 
+# V7 — URL extraction for AI link analysis
+_URL_RE = re.compile(
+    r"(?:https?://|www\.)\S+|t\.me/\S+",
+    re.IGNORECASE,
+)
+
+
+def _extract_urls(text: str) -> list[str]:
+    """Extract all URLs from *text* for AI link analysis."""
+    return _URL_RE.findall(text)
+
 
 def _has_forwarded(message: Message) -> bool:
     return bool(
@@ -286,8 +297,88 @@ async def _check_media_locks(
 
 
 # ---------------------------------------------------------------------------
-# V6 — AI Protection (Gemini) — never raises; silently skips on any failure.
+# V6/V7 — AI Protection (Gemini) — never raises; silently skips on any failure.
 # ---------------------------------------------------------------------------
+
+async def _apply_ai_multi_actions(
+    bot: Bot,
+    session: AsyncSession,
+    message: Message,
+    settings,
+    reason: str,
+    filter_type: str,
+) -> bool:
+    """
+    V7: Apply all enabled AI actions in order: delete → warn → mute → ban.
+    Message is always deleted first (minimum action for any AI violation).
+    Returns True unconditionally on entry — caller can rely on it as a
+    "message was handled" sentinel.
+    """
+    chat_id  = message.chat.id
+    user     = message.from_user
+    user_id  = user.id
+    name     = user.first_name or str(user_id)
+    mute_dur = getattr(settings, "mute_duration", 3600)
+
+    # 1. Delete the offending message (always — regardless of action config)
+    try:
+        await mod.delete_message_safe(
+            bot, session, chat_id=chat_id,
+            message_id=message.message_id,
+            actor_id=None, reason=reason,
+        )
+    except Exception as exc:
+        log.debug("AI delete failed (already gone?): %s", exc)
+
+    # 2. Extra punishment actions (independent of delete)
+    if getattr(settings, "ai_action_warn", False):
+        try:
+            count, limit, punished = await warn_user(
+                bot, session, chat_id=chat_id,
+                user_id=user_id, actor_id=None, reason=reason,
+            )
+            if punished:
+                await _notify(bot, chat_id, S.auto_punished, user_id, name)
+            else:
+                try:
+                    await bot.send_message(
+                        chat_id,
+                        S.auto_warn_notice.format(count=count, limit=limit, reason=reason),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+        except Exception as exc:
+            log.debug("AI warn failed: %s", exc)
+
+    if getattr(settings, "ai_action_mute", False):
+        try:
+            await mod.mute_user(
+                bot, session, chat_id=chat_id, user_id=user_id,
+                duration_seconds=mute_dur, actor_id=None, reason=reason,
+            )
+        except Exception as exc:
+            log.debug("AI mute failed: %s", exc)
+
+    if getattr(settings, "ai_action_ban", False):
+        try:
+            await mod.ban_user(
+                bot, session, chat_id=chat_id, user_id=user_id,
+                actor_id=None, reason=reason,
+            )
+        except Exception as exc:
+            log.debug("AI ban failed: %s", exc)
+
+    # 3. Audit log
+    await repo.add_log(
+        session,
+        group_id=chat_id,
+        event_type="filter_triggered",
+        target_id=user_id,
+        details=f"filter={filter_type} reason={reason}",
+    )
+    return True
+
 
 async def _handle_ai_verdict(
     session: AsyncSession,
@@ -298,12 +389,12 @@ async def _handle_ai_verdict(
     threshold: int,
     act_fn,
 ) -> bool:
-    """Apply moderation action for a VIOLATION verdict; log SUSPICIOUS only."""
+    """Route VIOLATION to act_fn (multi-action closure); log SUSPICIOUS only."""
     if verdict is None:
         return False
 
     if verdict.is_violation and verdict.confidence >= threshold:
-        reason = f"ai:{verdict.reason}" if verdict.reason else "ai_violation"
+        reason = f"ai:{verdict.reason[:120]}" if verdict.reason else "ai_violation"
         return await act_fn(filter_type, reason)
 
     if verdict.is_suspicious:
@@ -334,7 +425,7 @@ async def _run_ai_image_check(
         return False
 
     f_ai_img = fmap.get("ai_image")
-    if not f_ai_img or not f_ai_img.enabled or f_ai_img.action == "ignore":
+    if not f_ai_img or not f_ai_img.enabled:
         return False
 
     try:
@@ -346,7 +437,7 @@ async def _run_ai_image_check(
         log.warning("AI image download failed: %s", exc)
         return False
 
-    verdict = await ai_manager.analyze_image(session, image_bytes, mime_type="image/jpeg")
+    verdict   = await ai_manager.analyze_image(session, image_bytes, mime_type="image/jpeg")
     threshold = AI_SENSITIVITY_THRESHOLDS.get(settings.ai_sensitivity, 65)
     return await _handle_ai_verdict(
         session, message.chat.id, message.from_user.id, "ai_image", verdict, threshold, act_fn,
@@ -367,13 +458,48 @@ async def _run_ai_text_check(
         return False
 
     f_ai_text = fmap.get("ai_text")
-    if not f_ai_text or not f_ai_text.enabled or f_ai_text.action == "ignore":
+    if not f_ai_text or not f_ai_text.enabled:
         return False
 
-    verdict = await ai_manager.analyze_text(session, text)
+    verdict   = await ai_manager.analyze_text(session, text)
     threshold = AI_SENSITIVITY_THRESHOLDS.get(settings.ai_sensitivity, 65)
     return await _handle_ai_verdict(
         session, message.chat.id, message.from_user.id, "ai_text", verdict, threshold, act_fn,
+    )
+
+
+async def _run_ai_links_check(
+    session: AsyncSession,
+    message: Message,
+    text: str,
+    settings,
+    fmap: dict[str, Filter],
+    act_fn,
+) -> bool:
+    """
+    V7: Dedicated URL-safety analysis.
+    Extracts up to 5 URLs from the message text and classifies them with the
+    LINK_SYSTEM_PROMPT. Only fires when ai_analyze_links is enabled and the
+    ai_text filter gate is open (reuses the same filter enable flag).
+    """
+    if not (settings and settings.ai_enabled and getattr(settings, "ai_analyze_links", False)):
+        return False
+    if not text or not text.strip():
+        return False
+
+    f_ai_text = fmap.get("ai_text")
+    if not f_ai_text or not f_ai_text.enabled:
+        return False
+
+    urls = _extract_urls(text)
+    if not urls:
+        return False
+
+    url_sample = " ".join(urls[:5])   # cap at 5 URLs to avoid huge prompts
+    verdict    = await ai_manager.analyze_links(session, url_sample)
+    threshold  = AI_SENSITIVITY_THRESHOLDS.get(settings.ai_sensitivity, 65)
+    return await _handle_ai_verdict(
+        session, message.chat.id, message.from_user.id, "ai_links", verdict, threshold, act_fn,
     )
 
 
@@ -441,12 +567,17 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
         return True
 
     # ════════════════════════════════════════════════════════════════════════
-    # V6: AI IMAGE ANALYSIS — runs early, right after media locks, before any
-    #     text filter. Only invoked when AI + image analysis are enabled for
-    #     this group and the ai_image filter itself is enabled with a
-    #     non-ignore action. Never raises — failures are silently skipped.
+    # V7: AI action closure — uses multi-action settings instead of the
+    #     single filter action. Shared by image, text, and link AI checks.
     # ════════════════════════════════════════════════════════════════════════
-    if await _run_ai_image_check(bot, session, message, settings, fmap, act):
+    async def ai_act(filter_type: str, reason: str) -> bool:
+        return await _apply_ai_multi_actions(bot, session, message, settings, reason, filter_type)
+
+    # ════════════════════════════════════════════════════════════════════════
+    # V6: AI IMAGE ANALYSIS — runs early, right after media locks, before any
+    #     text filter. Never raises — failures are silently skipped.
+    # ════════════════════════════════════════════════════════════════════════
+    if await _run_ai_image_check(bot, session, message, settings, fmap, ai_act):
         return
 
     # ════════════════════════════════════════════════════════════════════════
@@ -550,13 +681,22 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
             return
 
     # ════════════════════════════════════════════════════════════════════════
-    # 13. AI TEXT ANALYSIS (V6) — runs last, after all deterministic filters.
+    # 13. AI TEXT ANALYSIS (V6) — runs after all deterministic filters.
     #     Detects profanity, insults, harassment, hate speech, threats, scams,
     #     spam, ads, suspicious links, filter-bypass attempts, and toxicity.
-    #     Only invoked when AI + message analysis are enabled for this group
-    #     and the ai_text filter itself is enabled with a non-ignore action.
     #     Never raises — failures are silently skipped so the bot keeps working.
     # ════════════════════════════════════════════════════════════════════════
     if text:
-        if await _run_ai_text_check(session, message, text, settings, fmap, act):
+        if await _run_ai_text_check(session, message, text, settings, fmap, ai_act):
+            return
+
+    # ════════════════════════════════════════════════════════════════════════
+    # 14. AI LINK ANALYSIS (V7) — dedicated URL-safety check.
+    #     Only fires when ai_analyze_links is enabled AND the message text
+    #     contains at least one URL that slipped past the deterministic link
+    #     filters above. Uses the LINK_SYSTEM_PROMPT for targeted verdict.
+    #     Never raises — failures are silently skipped.
+    # ════════════════════════════════════════════════════════════════════════
+    if text:
+        if await _run_ai_links_check(session, message, text, settings, fmap, ai_act):
             return

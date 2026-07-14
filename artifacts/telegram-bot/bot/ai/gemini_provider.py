@@ -15,7 +15,7 @@ import json
 import re
 
 from bot.ai.base import AIProvider, AIVerdict, CLASSIFICATIONS, RECOMMENDED_ACTIONS
-from bot.ai.prompts import IMAGE_SYSTEM_PROMPT, TEXT_SYSTEM_PROMPT
+from bot.ai.prompts import IMAGE_SYSTEM_PROMPT, LINK_SYSTEM_PROMPT, TEXT_SYSTEM_PROMPT
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -85,6 +85,24 @@ class GeminiProvider(AIProvider):
             contents=[types.Part.from_bytes(data=image_bytes, mime_type=mime_type)],
             config=types.GenerateContentConfig(
                 system_instruction=IMAGE_SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=300,
+            ),
+        )
+        return _parse_verdict(response.text)
+
+    async def analyze_links(self, api_key: str, url_string: str) -> AIVerdict:
+        """V7: Classify extracted URLs for safety threats (phishing, malware, scams…)."""
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model=_MODEL,
+            contents=url_string[:2000],
+            config=types.GenerateContentConfig(
+                system_instruction=LINK_SYSTEM_PROMPT,
                 response_mime_type="application/json",
                 temperature=0,
                 max_output_tokens=300,

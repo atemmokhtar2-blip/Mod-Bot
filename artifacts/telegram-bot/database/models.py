@@ -216,6 +216,16 @@ class GroupSettings(Base):
     # low | medium | high — maps to a confidence threshold in bot/ai/manager.py
     ai_sensitivity: Mapped[str] = mapped_column(String(8), default="medium")
 
+    # ── AI Protection (V7) — link analysis + multi-action support ────────────
+    # New analysis sub-modes
+    ai_analyze_links: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Multi-action: any combination of these can be enabled simultaneously.
+    # Default keeps backward-compat: delete only (mirrors V6 filter default).
+    ai_action_delete: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_action_warn: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_action_mute: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_action_ban: Mapped[bool] = mapped_column(Boolean, default=False)
+
     group: Mapped["Group"] = relationship("Group", back_populates="settings")
 
 

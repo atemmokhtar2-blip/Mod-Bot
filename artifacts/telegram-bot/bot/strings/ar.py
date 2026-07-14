@@ -702,25 +702,41 @@ class S:
 
     btn_v4_ai = "🧠 الذكاء الاصطناعي"
 
+    # V7 panel: simpler header — buttons show all sub-settings.
     ai_settings_title = (
         "════════════════════\n"
         "🧠 <b>نظام الحماية بالذكاء الاصطناعي</b>\n\n"
         "المجموعة: <b>{title}</b>\n\n"
-        "يستخدم هذا النظام Gemini AI لتحليل الرسائل والصور واكتشاف:\n"
-        "الشتائم، التحرش، خطاب الكراهية، التهديدات، الاحتيال، السبام، "
-        "الإعلانات، الروابط المشبوهة، ومحاولات تجاوز الفلاتر.\n\n"
-        "الحالة: {status}\n"
-        "تحليل الرسائل: {msg_status}\n"
-        "تحليل الصور: {img_status}\n"
-        "الحساسية: <b>{sensitivity}</b>\n"
+        "📊 حالة النظام: {system_status}\n"
         "════════════════════"
     )
 
     btn_ai_toggle          = "{status} تفعيل الذكاء الاصطناعي"
-    btn_ai_analyze_msgs    = "{status} تحليل الرسائل"
-    btn_ai_analyze_images  = "{status} تحليل الصور"
-    btn_ai_sensitivity     = "🎛️ الحساسية: {level}"
+    btn_ai_analyze_msgs    = "{status} 📝 تحليل الرسائل"
+    btn_ai_analyze_images  = "{status} 🖼️ تحليل الصور"
+    btn_ai_analyze_links   = "{status} 🔗 تحليل الروابط"
+    btn_ai_sensitivity     = "🎯 مستوى الحساسية: {level}"
+    btn_ai_actions         = "⚡ الإجراءات"
     btn_ai_status          = "📊 حالة النظام"
+
+    # V7 — multi-action selection panel
+    ai_actions_title = (
+        "════════════════════\n"
+        "⚡ <b>إجراءات الذكاء الاصطناعي</b>\n\n"
+        "عند اكتشاف محتوى مخالف يُطبَّق كل إجراء مفعّل تلقائياً.\n"
+        "يمكن تفعيل أكثر من إجراء في آنٍ واحد.\n"
+        "════════════════════"
+    )
+    btn_ai_action_delete   = "{status} 🗑️ حذف الرسالة"
+    btn_ai_action_warn     = "{status} ⚠️ تحذير"
+    btn_ai_action_mute     = "{status} 🔇 كتم"
+    btn_ai_action_ban      = "{status} 🚫 حظر"
+
+    # V7 — 3-state system status
+    ai_status_retrying     = "🟡 جاري إعادة المحاولة"
+
+    # V7 — link violation notification
+    auto_ai_links = "🔗 <a href=\"tg://user?id={uid}\">{name}</a> — رابط مخالف (تم رصده بالذكاء الاصطناعي)."
 
     ai_sensitivity_title = (
         "════════════════════\n"

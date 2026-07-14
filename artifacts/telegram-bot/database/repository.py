@@ -217,6 +217,12 @@ async def reset_group_settings(session: AsyncSession, group_id: int) -> None:
             ai_analyze_messages=True,
             ai_analyze_images=True,
             ai_sensitivity="medium",
+            # V7
+            ai_analyze_links=False,
+            ai_action_delete=True,
+            ai_action_warn=False,
+            ai_action_mute=False,
+            ai_action_ban=False,
         )
     )
     # Disable all filters

@@ -51,6 +51,7 @@ from bot.keyboards.builder import (
     _V4_MEDIA_LOCKS,
     _V4_PERMS,
     back_kb,
+    v4_ai_actions_kb,
     v4_ai_sensitivity_kb,
     v4_ai_settings_kb,
     v4_ai_status_kb,
@@ -811,14 +812,30 @@ async def cb_v4_lang_set(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ── V6: AI Protection (Gemini) ────────────────────────────────────────────────
+# ── V6/V7: AI Protection (Gemini) ─────────────────────────────────────────────
 # ---------------------------------------------------------------------------
 
 _AI_SENS_LABELS = {"low": S.ai_sensitivity_low, "medium": S.ai_sensitivity_medium, "high": S.ai_sensitivity_high}
 
 
-def _ai_status_str(enabled: bool) -> str:
-    return S.enabled if enabled else S.disabled
+async def _ai_system_status(session: AsyncSession, ai_enabled: bool) -> str:
+    """
+    V7: 3-state system status for the AI panel header.
+    🟢 يعمل بشكل طبيعي  — AI on + usable keys
+    🟡 جاري إعادة المحاولة — AI on + keys exist but all cooling down
+    🔴 متوقف              — AI off, or no enabled keys at all
+    """
+    if not ai_enabled:
+        return S.ai_status_no_keys
+
+    from bot.ai.key_manager import key_manager
+    counts = await repo.count_ai_keys(session, "gemini")
+
+    if counts["enabled"] == 0:
+        return S.ai_status_no_keys
+    if key_manager.has_cooling_down_keys("gemini"):
+        return S.ai_status_retrying
+    return S.ai_status_ok
 
 
 @router.callback_query(F.data.startswith("v4s:ai:"))
@@ -828,35 +845,25 @@ async def cb_v4_ai(cb: CallbackQuery, session: AsyncSession) -> None:
     if not await _ensure_authorized(cb, session, group_id):
         return
 
-    group    = await repo.get_group(session, group_id)
-    settings = await repo.get_settings(session, group_id)
-    title    = escape_html(group.title) if group else str(group_id)
+    group         = await repo.get_group(session, group_id)
+    settings      = await repo.get_settings(session, group_id)
+    title         = escape_html(group.title) if group else str(group_id)
+    system_status = await _ai_system_status(session, settings.ai_enabled)
     await _edit(
         cb,
-        S.ai_settings_title.format(
-            title=title,
-            status=_ai_status_str(settings.ai_enabled),
-            msg_status=_ai_status_str(settings.ai_analyze_messages),
-            img_status=_ai_status_str(settings.ai_analyze_images),
-            sensitivity=_AI_SENS_LABELS.get(settings.ai_sensitivity, settings.ai_sensitivity),
-        ),
+        S.ai_settings_title.format(title=title, system_status=system_status),
         reply_markup=v4_ai_settings_kb(group_id, settings),
     )
 
 
 async def _rerender_ai_panel(cb: CallbackQuery, session: AsyncSession, group_id: int) -> None:
-    group    = await repo.get_group(session, group_id)
-    settings = await repo.get_settings(session, group_id)
-    title    = escape_html(group.title) if group else str(group_id)
+    group         = await repo.get_group(session, group_id)
+    settings      = await repo.get_settings(session, group_id)
+    title         = escape_html(group.title) if group else str(group_id)
+    system_status = await _ai_system_status(session, settings.ai_enabled)
     await _edit(
         cb,
-        S.ai_settings_title.format(
-            title=title,
-            status=_ai_status_str(settings.ai_enabled),
-            msg_status=_ai_status_str(settings.ai_analyze_messages),
-            img_status=_ai_status_str(settings.ai_analyze_images),
-            sensitivity=_AI_SENS_LABELS.get(settings.ai_sensitivity, settings.ai_sensitivity),
-        ),
+        S.ai_settings_title.format(title=title, system_status=system_status),
         reply_markup=v4_ai_settings_kb(group_id, settings),
     )
 
@@ -902,6 +909,24 @@ async def cb_v4_ai_toggle_images(cb: CallbackQuery, session: AsyncSession) -> No
     await _rerender_ai_panel(cb, session, group_id)
 
 
+@router.callback_query(F.data.startswith("v4s:ai_toggle_links:"))
+async def cb_v4_ai_toggle_links(cb: CallbackQuery, session: AsyncSession) -> None:
+    """V7: Toggle dedicated link / URL analysis."""
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings = await repo.get_settings(session, group_id)
+    new_state = not getattr(settings, "ai_analyze_links", False)
+    await repo.update_settings(session, group_id, ai_analyze_links=new_state)
+    await repo.add_log(
+        session, group_id=group_id, event_type="settings_changed",
+        actor_id=cb.from_user.id, details=f"ai_analyze_links → {new_state}",
+    )
+    await _rerender_ai_panel(cb, session, group_id)
+
+
 @router.callback_query(F.data.startswith("v4s:ai_sens:"))
 async def cb_v4_ai_sens(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
@@ -933,15 +958,69 @@ async def cb_v4_ai_sens_set(cb: CallbackQuery, session: AsyncSession) -> None:
     await _rerender_ai_panel(cb, session, group_id)
 
 
-@router.callback_query(F.data.startswith("v4s:ai_status:"))
-async def cb_v4_ai_status(cb: CallbackQuery, session: AsyncSession) -> None:
+@router.callback_query(F.data.startswith("v4s:ai_actions:"))
+async def cb_v4_ai_actions(cb: CallbackQuery, session: AsyncSession) -> None:
+    """V7: Show multi-action selection panel."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
     if not await _ensure_authorized(cb, session, group_id):
         return
 
-    counts = await repo.count_ai_keys(session, "gemini")
-    overall = S.ai_status_ok if counts["enabled"] > 0 else S.ai_status_no_keys
+    settings = await repo.get_settings(session, group_id)
+    await _edit(
+        cb,
+        S.ai_actions_title,
+        reply_markup=v4_ai_actions_kb(group_id, settings),
+    )
+
+
+@router.callback_query(F.data.startswith("v4s:ai_action_toggle:"))
+async def cb_v4_ai_action_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+    """V7: Toggle one AI action on / off."""
+    await _answer(cb)
+    parts = cb.data.split(":")   # v4s:ai_action_toggle:{gid}:{action}
+    group_id = int(parts[2])
+    action   = parts[3]          # delete | warn | mute | ban
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    col_map = {
+        "delete": "ai_action_delete",
+        "warn":   "ai_action_warn",
+        "mute":   "ai_action_mute",
+        "ban":    "ai_action_ban",
+    }
+    col = col_map.get(action)
+    if not col:
+        return
+
+    settings  = await repo.get_settings(session, group_id)
+    new_state = not getattr(settings, col, False)
+    await repo.update_settings(session, group_id, **{col: new_state})
+    await repo.add_log(
+        session, group_id=group_id, event_type="settings_changed",
+        actor_id=cb.from_user.id, details=f"{col} → {new_state}",
+    )
+    # Re-render the actions panel
+    settings = await repo.get_settings(session, group_id)
+    await _edit(
+        cb,
+        S.ai_actions_title,
+        reply_markup=v4_ai_actions_kb(group_id, settings),
+    )
+
+
+@router.callback_query(F.data.startswith("v4s:ai_status:"))
+async def cb_v4_ai_status(cb: CallbackQuery, session: AsyncSession) -> None:
+    """V7: 3-state system status page."""
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings = await repo.get_settings(session, group_id)
+    counts   = await repo.count_ai_keys(session, "gemini")
+    overall  = await _ai_system_status(session, settings.ai_enabled)
     await _edit(
         cb,
         S.ai_status_title.format(

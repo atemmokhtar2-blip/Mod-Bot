@@ -630,10 +630,11 @@ def v4_reset_confirm_kb(group_id: int) -> InlineKeyboardMarkup:
 
 
 # ---------------------------------------------------------------------------
-# V6 — AI Protection settings panel (Gemini)
+# V6/V7 — AI Protection settings panel (Gemini)
 # ---------------------------------------------------------------------------
 
 def v4_ai_settings_kb(group_id: int, settings: GroupSettings) -> InlineKeyboardMarkup:
+    """V7: 7-button AI panel — toggle, analyse (msgs/images/links), sensitivity, actions, status."""
     sensitivity_labels = {
         "low": S.ai_sensitivity_low,
         "medium": S.ai_sensitivity_medium,
@@ -652,12 +653,50 @@ def v4_ai_settings_kb(group_id: int, settings: GroupSettings) -> InlineKeyboardM
         text=S.btn_ai_analyze_images.format(status=_status(settings.ai_analyze_images)),
         callback_data=f"v4s:ai_toggle_images:{group_id}",
     )
+    # V7 — link analysis toggle
     builder.button(
-        text=S.btn_ai_sensitivity.format(level=sensitivity_labels.get(settings.ai_sensitivity, settings.ai_sensitivity)),
+        text=S.btn_ai_analyze_links.format(
+            status=_status(getattr(settings, "ai_analyze_links", False))
+        ),
+        callback_data=f"v4s:ai_toggle_links:{group_id}",
+    )
+    builder.button(
+        text=S.btn_ai_sensitivity.format(
+            level=sensitivity_labels.get(settings.ai_sensitivity, settings.ai_sensitivity)
+        ),
         callback_data=f"v4s:ai_sens:{group_id}",
     )
-    builder.button(text=S.btn_ai_status, callback_data=f"v4s:ai_status:{group_id}")
+    # V7 — multi-action picker
+    builder.button(text=S.btn_ai_actions, callback_data=f"v4s:ai_actions:{group_id}")
+    builder.button(text=S.btn_ai_status,  callback_data=f"v4s:ai_status:{group_id}")
     builder.row(_back_btn(f"v4s:menu:{group_id}"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def v4_ai_actions_kb(group_id: int, settings: GroupSettings) -> InlineKeyboardMarkup:
+    """V7: Multi-action selection (checkmark = enabled, circle = disabled)."""
+    def _tick(flag: bool) -> str:
+        return "✓" if flag else "○"
+
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=S.btn_ai_action_delete.format(status=_tick(getattr(settings, "ai_action_delete", True))),
+        callback_data=f"v4s:ai_action_toggle:{group_id}:delete",
+    )
+    builder.button(
+        text=S.btn_ai_action_warn.format(status=_tick(getattr(settings, "ai_action_warn", False))),
+        callback_data=f"v4s:ai_action_toggle:{group_id}:warn",
+    )
+    builder.button(
+        text=S.btn_ai_action_mute.format(status=_tick(getattr(settings, "ai_action_mute", False))),
+        callback_data=f"v4s:ai_action_toggle:{group_id}:mute",
+    )
+    builder.button(
+        text=S.btn_ai_action_ban.format(status=_tick(getattr(settings, "ai_action_ban", False))),
+        callback_data=f"v4s:ai_action_toggle:{group_id}:ban",
+    )
+    builder.row(_back_btn(f"v4s:ai:{group_id}"))
     builder.adjust(1)
     return builder.as_markup()
 
