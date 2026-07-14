@@ -67,28 +67,55 @@ async def get_user(session: AsyncSession, user_id: int) -> User | None:
 async def upsert_group(session: AsyncSession, *, group_id: int, title: str,
                        owner_id: int | None = None,
                        username: str | None = None) -> Group:
+    """
+    Save/update the group row (group_id, title, owner_id, timestamps). This is
+    the critical registration write — if a *previously registered* group
+    already has an owner_id and this call is passed owner_id=None (e.g. a
+    transient Telegram API failure to fetch admins), we must NOT overwrite the
+    existing owner with NULL. Real re-assignment of the owner goes through
+    `set_owner()` explicitly.
+    """
+    existing = await session.get(Group, group_id)
+    effective_owner_id = owner_id if owner_id is not None else (existing.owner_id if existing else None)
+
     stmt = pg_insert(Group).values(
         group_id=group_id,
         title=title,
-        owner_id=owner_id,
+        owner_id=effective_owner_id,
         username=username,
         is_active=True,
     ).on_conflict_do_update(
         index_elements=["group_id"],
-        set_=dict(title=title, owner_id=owner_id, username=username,
+        set_=dict(title=title, owner_id=effective_owner_id, username=username,
                   is_active=True, updated_at=datetime.now(timezone.utc)),
     )
     await session.execute(stmt)
     await session.commit()
     group = await session.get(Group, group_id)
+    log.info(
+        "group_saved: group_id=%s title=%r owner_id=%s (%s)",
+        group_id, title, effective_owner_id,
+        "new" if existing is None else "updated",
+    )
 
-    await _ensure_group_settings(session, group_id)
-    await _ensure_group_filters(session, group_id)
+    # AI settings/filter seeding must never block group registration itself —
+    # log and continue on failure instead of propagating (V8 fix).
+    try:
+        await _ensure_group_settings(session, group_id)
+    except Exception as exc:
+        log.warning("group_settings seeding failed for group_id=%s: %s", group_id, exc)
+    try:
+        await _ensure_group_filters(session, group_id)
+    except Exception as exc:
+        log.warning("group_filters seeding failed for group_id=%s: %s", group_id, exc)
+
     return group
 
 
 async def get_group(session: AsyncSession, group_id: int) -> Group | None:
-    return await session.get(Group, group_id)
+    group = await session.get(Group, group_id)
+    log.info("group_lookup: group_id=%s found=%s", group_id, group is not None)
+    return group
 
 
 async def get_groups_for_user(session: AsyncSession, user_id: int) -> list[Group]:
@@ -114,6 +141,11 @@ async def get_groups_for_user(session: AsyncSession, user_id: int) -> list[Group
         if g.group_id not in seen:
             result.append(g)
             seen.add(g.group_id)
+
+    log.info(
+        "group_lookup: user_id=%s owner_of=%d admin_of=%d total=%d",
+        user_id, len(owned), len(admin_groups), len(result),
+    )
     return result
 
 
@@ -324,15 +356,24 @@ async def is_admin_in_db(session: AsyncSession, group_id: int, user_id: int) -> 
 async def is_authorized(session: AsyncSession, group_id: int, user_id: int) -> bool:
     """True if user is the group owner or a registered bot admin for this group."""
     group = await session.get(Group, group_id)
-    if group and group.owner_id == user_id:
+    is_owner_match = bool(group and group.owner_id == user_id)
+    if is_owner_match:
+        log.info("owner_lookup: group_id=%s user_id=%s is_owner=True", group_id, user_id)
         return True
-    return await is_admin_in_db(session, group_id, user_id)
+    result = await is_admin_in_db(session, group_id, user_id)
+    log.info(
+        "owner_lookup: group_id=%s user_id=%s is_owner=False is_registered_admin=%s",
+        group_id, user_id, result,
+    )
+    return result
 
 
 async def is_owner(session: AsyncSession, group_id: int, user_id: int) -> bool:
     """V4: True only if user is the group owner."""
     group = await session.get(Group, group_id)
-    return bool(group and group.owner_id == user_id)
+    result = bool(group and group.owner_id == user_id)
+    log.info("owner_lookup: group_id=%s user_id=%s is_owner=%s", group_id, user_id, result)
+    return result
 
 
 async def toggle_all_filters(session: AsyncSession, group_id: int, enabled: bool) -> None:

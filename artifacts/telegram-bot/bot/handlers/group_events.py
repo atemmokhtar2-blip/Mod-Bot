@@ -38,9 +38,12 @@ router = Router(name="group_events")
 async def bot_joined_chat(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
     chat = event.chat
     chat_type = chat.type
+    inviter_id = event.from_user.id if event.from_user else None
+
+    log.info("bot_added: chat_id=%s chat_type=%s inviter=%s", chat.id, chat_type, inviter_id)
 
     if chat_type in ("group", "supergroup"):
-        await register_group(session, bot, chat.id)
+        await register_group(session, bot, chat.id, added_by_user_id=inviter_id)
         try:
             me = await bot.get_me()
             await bot.send_message(
@@ -65,8 +68,18 @@ async def bot_member_status_changed(event: ChatMemberUpdated, bot: Bot, session:
 
     old_status = event.old_chat_member.status
     new_status = event.new_chat_member.status
+    actor_id = event.from_user.id if event.from_user else None
 
     if old_status in ("member", "restricted") and new_status == "administrator":
+        log.info(
+            "bot_added: chat_id=%s promoted to administrator by=%s — re-registering to sync owner/admins",
+            chat.id, actor_id,
+        )
+        # V8 fix: re-run registration on promotion too. Being added as a plain
+        # member doesn't expose the admin list reliably; once the bot becomes
+        # an admin we can see the real admin list and must (re)save it so the
+        # private panel finds the group immediately — never re-ask to add it.
+        await register_group(session, bot, chat.id, added_by_user_id=actor_id)
         try:
             me = await bot.get_me()
             await bot.send_message(

@@ -59,6 +59,18 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
                 if not group.owner_id:
                     await repo.set_owner(session, group_id, user.id)
                     group = await repo.get_group(session, group_id)
+                    log.info("owner_assigned: group_id=%s user_id=%s via deep link", group_id, user.id)
+
+                # Ensure this user is always recognised as a manager of this
+                # group going forward (plain /start, menu:groups, etc.), not
+                # just via the deep link itself. Bot is already in the group —
+                # never make them add it again.
+                try:
+                    await repo.add_admin(session, group_id=group_id, user_id=user.id, added_by=user.id)
+                    log.info("admin_synced: group_id=%s user_id=%s via deep link", group_id, user.id)
+                except Exception as exc:
+                    log.warning("admin_synced: deep-link sync failed for group_id=%s user_id=%s: %s",
+                               group_id, user.id, exc)
 
                 # Show the success message and the group panel directly
                 await message.answer(
@@ -68,11 +80,17 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
                 )
                 log.info("User %s linked group %s via deep link", user.id, group_id)
                 return
+            else:
+                log.warning(
+                    "group_lookup: deep link grp_%s referenced by user %s but group not found in DB "
+                    "(bot may not be registered for this chat)", group_id, user.id,
+                )
 
     # ------------------------------------------------------------------
     # Normal /start — show home dashboard
     # ------------------------------------------------------------------
     groups = await repo.get_groups_for_user(session, user.id)
+    log.info("group_loaded: user_id=%s loaded %d group(s) for dashboard", user.id, len(groups))
     name = escape_html(user.first_name)
 
     if groups:

@@ -349,6 +349,10 @@ LOG_EVENTS = [
     "filter_triggered",
     "bot_added",
     "bot_removed",
+    # V8: group/admin registration diagnostics
+    "group_saved",
+    "owner_assigned",
+    "admin_synced",
 ]
 
 
