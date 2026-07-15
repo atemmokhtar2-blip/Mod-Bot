@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "out-tsc",
+    "rootDir": "."
+  },
+  "include": ["."],
+  "references": [
+    {
+      "path": "../artifacts/api-server"
+    }
+  ]
+}
