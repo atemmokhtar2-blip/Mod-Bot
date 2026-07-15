@@ -736,6 +736,28 @@ class S:
     # V7 — 3-state system status
     ai_status_retrying     = "🟡 جاري إعادة المحاولة"
 
+    # ─── RC1: 🧪 Live Gemini test button ─────────────────────────────────────
+    btn_ai_test        = "🧪 اختبار Gemini"
+    ai_test_running    = "⏳ جارٍ اختبار الاتصال بـ Gemini…"
+    ai_test_no_keys    = "❌ لا توجد مفاتيح Gemini مفعّلة للاختبار."
+    ai_test_result_ok  = (
+        "════════════════════\n"
+        "🧪 <b>نتيجة اختبار Gemini</b>\n\n"
+        "الحالة: 🟢 يعمل بشكل طبيعي\n"
+        "زمن الاستجابة: <b>{latency_ms} ms</b>\n"
+        "النموذج: <code>{model}</code>\n"
+        "المفتاح النشط: <code>{key_mask}</code>\n"
+        "المفاتيح المفعّلة: <b>{active_keys}</b>\n"
+        "════════════════════"
+    )
+    ai_test_result_fail = (
+        "════════════════════\n"
+        "🧪 <b>نتيجة اختبار Gemini</b>\n\n"
+        "الحالة: 🔴 فشل الاتصال\n"
+        "السبب: {error}\n"
+        "════════════════════"
+    )
+
     # V7 — link violation notification
     auto_ai_links = "🔗 <a href=\"tg://user?id={uid}\">{name}</a> — رابط مخالف (تم رصده بالذكاء الاصطناعي)."
 

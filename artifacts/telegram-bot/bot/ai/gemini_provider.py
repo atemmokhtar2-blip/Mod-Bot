@@ -152,6 +152,25 @@ class GeminiProvider(AIProvider):
         )
         return _parse_verdict(response.text)
 
+    async def test_connection(self, api_key: str) -> dict:
+        """RC1: Timed Gemini ping — returns {"model", "latency_ms"}. Raises on failure."""
+        import time
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        t0 = time.monotonic()
+        await client.aio.models.generate_content(
+            model=_MODEL,
+            contents="ping",
+            config=types.GenerateContentConfig(
+                system_instruction="Reply with exactly: OK",
+                temperature=0,
+                max_output_tokens=5,
+            ),
+        )
+        return {"model": _MODEL, "latency_ms": int((time.monotonic() - t0) * 1000)}
+
     async def validate_key(self, api_key: str) -> None:
         """
         V7.2: Perform a minimal REAL request to Gemini to confirm the key is

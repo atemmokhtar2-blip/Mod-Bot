@@ -46,6 +46,10 @@ _config = load_config()
 setup_logging(_config.log_level)
 log = get_logger("webhook")
 
+# Warn immediately at cold-start about missing optional-but-important vars
+from config import check_optional_env as _check_env
+_check_env()
+
 _db_ready = False
 
 

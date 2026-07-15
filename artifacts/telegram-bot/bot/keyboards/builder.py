@@ -788,6 +788,7 @@ def v4_ai_sensitivity_kb(group_id: int, current: str) -> InlineKeyboardMarkup:
 
 def v4_ai_status_kb(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(text=S.btn_ai_test, callback_data=f"v4s:ai_test:{group_id}")
     builder.row(_back_btn(f"v4s:ai:{group_id}"))
     return builder.as_markup()
 

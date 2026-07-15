@@ -37,6 +37,9 @@ async def main() -> None:
     # ------------------------------------------------------------------
     config = load_config()
     setup_logging(config.log_level)
+
+    from config import check_optional_env
+    check_optional_env()
     log = get_logger("main")
     log.info("Starting Telegram Moderation Bot v4.1 (Advanced Profanity Filter)…")
 

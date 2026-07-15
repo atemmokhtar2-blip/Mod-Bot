@@ -3,3 +3,4 @@
 - [Vercel + aiogram webhook](vercel-aiogram-webhook.md) — rebuild Bot/Dispatcher per request in Vercel Python functions; aiohttp session binds to a loop that won't survive across invocations.
 - [Encrypted secret + display mask](encrypted-secret-with-display-mask.md) — precompute a masked preview at insert time so display code never needs to decrypt stored API keys.
 - [Telegram AI moderation audit patterns](telegram-ai-moderation-audit.md) — live key validation, derived per-key health status, edited-message reuse, dedup cache, profile/description trigger points.
+- [RC1 dual-gate AI bug](rc1-ai-dual-gate.md) — AI moderation required BOTH settings.ai_enabled AND ai_text/ai_image filter rows; removing filter-row gate fixes silent no-op.

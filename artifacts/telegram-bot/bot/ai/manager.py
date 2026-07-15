@@ -216,6 +216,51 @@ class AIProtectionManager:
             _cache_set(cache_key, verdict)
         return verdict
 
+    async def test_connection(
+        self, session: AsyncSession, provider: str = DEFAULT_PROVIDER
+    ) -> dict:
+        """
+        RC1: Live connectivity test for the 🧪 owner panel button.
+
+        Acquires the current active key from the pool and sends a minimal real
+        request to the provider, measuring latency. Returns a structured dict:
+          {"ok": True,  "model": str, "latency_ms": int, "key_id": int, "key_mask": str}
+          {"ok": False, "error": str}   — error is the raw exception string
+        Never re-raises — callers always receive a dict.
+        """
+        engine = PROVIDER_REGISTRY.get(provider)
+        if not engine:
+            return {"ok": False, "error": "unknown_provider"}
+
+        key_row = await key_manager.acquire(session, provider)
+        if not key_row:
+            return {"ok": False, "error": "no_keys"}
+
+        try:
+            plaintext_key = decrypt_secret(key_row.api_key)
+        except ValueError as exc:
+            return {"ok": False, "error": f"key_decrypt_error: {exc}"}
+
+        try:
+            result = await engine.test_connection(plaintext_key)
+            log.info(
+                "ai_test_ok: provider=%s key_id=%s latency_ms=%s model=%s",
+                provider, key_row.id, result.get("latency_ms"), result.get("model"),
+            )
+            return {
+                "ok": True,
+                "model":      result.get("model", provider),
+                "latency_ms": result.get("latency_ms", 0),
+                "key_id":     key_row.id,
+                "key_mask":   key_row.key_mask or "••••••••",
+            }
+        except Exception as exc:
+            log.info(
+                "ai_test_failed: provider=%s key_id=%s error=%s",
+                provider, key_row.id, exc,
+            )
+            return {"ok": False, "error": str(exc)[:300]}
+
     async def validate_key(self, provider: str, api_key: str) -> tuple[bool, str | None]:
         """
         V7.2: Perform a REAL live request against *provider* with the raw

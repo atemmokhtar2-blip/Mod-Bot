@@ -74,14 +74,28 @@ def _adapt_db_url(url: str) -> str:
 
 
 def load_config() -> Config:
-    """Read and validate all required environment variables."""
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token:
-        raise EnvironmentError("TELEGRAM_BOT_TOKEN is not set.")
+    """Read and validate all required environment variables.
 
-    db_url = os.environ.get("DATABASE_URL", "")
+    Raises EnvironmentError immediately on any missing required variable so
+    the operator sees a precise, actionable message at startup rather than a
+    cryptic AttributeError later.
+    """
+    missing: list[str] = []
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        missing.append("TELEGRAM_BOT_TOKEN")
+
+    db_url = os.environ.get("DATABASE_URL", "").strip()
     if not db_url:
-        raise EnvironmentError("DATABASE_URL is not set.")
+        missing.append("DATABASE_URL")
+
+    if missing:
+        raise EnvironmentError(
+            "Required environment variable(s) not set: "
+            + ", ".join(missing)
+            + ". Set them and restart the bot."
+        )
 
     return Config(
         bot_token=token,
@@ -89,3 +103,35 @@ def load_config() -> Config:
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         bot_owner_ids=_parse_owner_ids(os.environ.get("BOT_OWNER_IDS", "")),
     )
+
+
+def check_optional_env() -> None:
+    """Log warnings for important-but-optional environment variables.
+
+    Call this once after setup_logging() is initialised so the warnings
+    appear in the structured log rather than on bare stderr.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+
+    if not os.environ.get("AI_KEY_ENCRYPTION_KEY"):
+        _log.warning(
+            "AI_KEY_ENCRYPTION_KEY is not set — Gemini key encryption is disabled. "
+            "Generate a key with: "
+            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
+            "and add it as an environment variable before storing any API keys."
+        )
+
+    if not os.environ.get("WEBHOOK_SECRET"):
+        _log.warning(
+            "WEBHOOK_SECRET is not set — the webhook endpoint will accept requests from any source. "
+            "Set this to a random string (shared between Telegram's setWebhook call and Vercel) "
+            "before going to production."
+        )
+
+    if not os.environ.get("BOT_OWNER_IDS"):
+        _log.warning(
+            "BOT_OWNER_IDS is not set — no bot owner is configured. "
+            "AI key management (/addaikey, /listaikeys, the inline wizard) will be inaccessible. "
+            "Set this to your Telegram numeric user ID (comma-separated for multiple owners)."
+        )

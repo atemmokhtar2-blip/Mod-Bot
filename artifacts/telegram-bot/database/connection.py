@@ -44,11 +44,38 @@ async_session: async_sessionmaker[AsyncSession] = async_sessionmaker(
 
 
 async def init_db() -> None:
-    """Create all tables that do not yet exist, then apply safe column migrations."""
+    """Create all tables that do not yet exist, then apply safe column migrations.
+
+    Retries the initial connection up to 5 times with 3-second delays — useful
+    on Vercel cold starts and container platforms (Railway, Zeabur, Fly.io) where
+    the database proxy may not be immediately reachable after a new deployment.
+    Once the tables are confirmed to exist the migration statements also use
+    IF NOT EXISTS, so this entire function is safe to call on every startup.
+    """
+    import asyncio as _asyncio
     from database.models import Base  # avoid circular import at module level
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    _MAX_ATTEMPTS = 5
+    _RETRY_DELAY  = 3.0  # seconds
+
+    for _attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            break  # connected — proceed to migrations
+        except Exception as _exc:
+            if _attempt < _MAX_ATTEMPTS:
+                log.warning(
+                    "Database connection attempt %d/%d failed: %s — retrying in %.0fs…",
+                    _attempt, _MAX_ATTEMPTS, _exc, _RETRY_DELAY,
+                )
+                await _asyncio.sleep(_RETRY_DELAY)
+            else:
+                log.error(
+                    "Database unreachable after %d attempts. Last error: %s",
+                    _MAX_ATTEMPTS, _exc,
+                )
+                raise
 
     # All migrations use ADD COLUMN IF NOT EXISTS — idempotent on every restart.
     migrations = [

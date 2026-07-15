@@ -68,3 +68,11 @@ class AIProvider:
         quota exhausted, etc). Must NOT raise on success.
         """
         raise NotImplementedError
+
+    async def test_connection(self, api_key: str) -> dict:
+        """
+        RC1: Timed live connectivity test for the owner 🧪 test button.
+        Must return at minimum: {"model": str, "latency_ms": int}.
+        Must raise on any failure — caller maps the exception to Arabic.
+        """
+        raise NotImplementedError

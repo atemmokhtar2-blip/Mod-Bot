@@ -44,6 +44,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.ai.manager import ai_manager
 from bot.filters.admin_filter import is_bot_owner_id
 from bot.keyboards.builder import (
     _ACTION_LABELS,
@@ -1060,6 +1061,65 @@ async def cb_v4_ai_status(cb: CallbackQuery, session: AsyncSession) -> None:
             enabled_keys=counts["enabled"], total_keys=counts["total"], overall_status=overall,
         ),
         reply_markup=v4_ai_status_kb(group_id),
+    )
+
+
+def _gemini_err_to_arabic(err: str | None) -> str:
+    """Map a raw Gemini error string to a specific Arabic user message."""
+    if not err:
+        return S.ai_key_invalid_gemini
+    e = err.lower()
+    if any(k in e for k in ("api_key_invalid", "invalid api key", "api key not valid", "invalid_api_key")):
+        return S.ai_key_err_api_invalid
+    if any(k in e for k in ("quota", "resource_exhausted", "429", "rate limit", "ratelimitexceeded")):
+        return S.ai_key_err_quota
+    if any(k in e for k in ("permission_denied", "403", "forbidden")):
+        return S.ai_key_err_permission
+    if any(k in e for k in ("model not found", "not found", "404", "model_not_found", "unsupported")):
+        return S.ai_key_err_model
+    if any(k in e for k in ("network", "connection", "timeout", "timed out")):
+        return S.ai_key_err_network
+    return S.ai_key_err_unknown.format(detail=err[:120].strip())
+
+
+@router.callback_query(F.data.startswith("v4s:ai_test:"))
+async def cb_v4_ai_test(cb: CallbackQuery, session: AsyncSession) -> None:
+    """RC1: Live Gemini connectivity test — 🧪 test button on the AI status page."""
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    # Show spinner immediately so the owner knows the request is in flight
+    await _edit(cb, S.ai_test_running)
+
+    counts = await repo.count_ai_keys(session, "gemini")
+    if counts["enabled"] == 0:
+        await _edit(
+            cb,
+            S.ai_test_no_keys,
+            reply_markup=back_kb(f"v4s:ai_status:{group_id}"),
+        )
+        return
+
+    result = await ai_manager.test_connection(session)
+
+    if result["ok"]:
+        text = S.ai_test_result_ok.format(
+            latency_ms=result["latency_ms"],
+            model=result["model"],
+            key_mask=result.get("key_mask", "••••••••"),
+            active_keys=counts["enabled"],
+        )
+    else:
+        text = S.ai_test_result_fail.format(
+            error=_gemini_err_to_arabic(result.get("error")),
+        )
+
+    await _edit(
+        cb,
+        text,
+        reply_markup=back_kb(f"v4s:ai_status:{group_id}"),
     )
 
 
