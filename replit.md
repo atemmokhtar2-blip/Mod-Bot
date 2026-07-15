@@ -19,11 +19,14 @@ cd artifacts/telegram-bot && python main.py
 
 ## Required Secrets
 
-| Secret | Description |
-|--------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather on Telegram |
-| `BOT_OWNER_IDS` | Your Telegram numeric user ID(s), comma-separated — grants access to `/addaikey`, `/listaikeys`, and the AI wizard |
-| `AI_KEY_ENCRYPTION_KEY` | Fernet key for encrypting stored Gemini API keys — generate with `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+Store these as Replit Secrets (never in source control):
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | ✅ | Bot token from @BotFather |
+| `BOT_OWNER_IDS` | ✅ | Your Telegram numeric user ID(s), comma-separated — grants access to `/addaikey`, `/listaikeys`, and the AI wizard |
+| `AI_KEY_ENCRYPTION_KEY` | ✅* | Fernet key for encrypting stored Gemini API keys. Generate: `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Required only if using AI/Gemini features. |
+| `WEBHOOK_SECRET` | ❌ | Random 32+ char string shared with Telegram's `setWebhook` call — only needed when deploying to Vercel/webhook mode, not for long-polling on Replit. Generate: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 
 `DATABASE_URL` is auto-provided by Replit's built-in PostgreSQL — no configuration needed.
 
