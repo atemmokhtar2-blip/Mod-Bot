@@ -114,13 +114,35 @@ def check_optional_env() -> None:
     import logging
     _log = logging.getLogger(__name__)
 
-    if not os.environ.get("AI_KEY_ENCRYPTION_KEY"):
+    _GEN_CMD = (
+        'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+    )
+
+    enc_key = os.environ.get("AI_KEY_ENCRYPTION_KEY", "").strip()
+    if not enc_key:
         _log.warning(
             "AI_KEY_ENCRYPTION_KEY is not set — Gemini key encryption is disabled. "
-            "Generate a key with: "
-            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
-            "and add it as an environment variable before storing any API keys."
+            "Generate a key with: %s "
+            "and add it as a secret before storing any API keys.",
+            _GEN_CMD,
         )
+    else:
+        # Validate format without importing the full crypto module (avoid lru_cache side-effects)
+        key_len = len(enc_key)
+        if key_len == 43:
+            _log.info(
+                "AI_KEY_ENCRYPTION_KEY: 43-char key detected — auto-padding trailing '=' "
+                "to form a valid 44-char Fernet key. Encryption is operational."
+            )
+        elif key_len != 44:
+            _log.error(
+                "AI_KEY_ENCRYPTION_KEY is %d characters — expected 44 (32 urlsafe-base64 bytes). "
+                "This key is INVALID and will prevent Gemini key storage from working. "
+                "Generate a correct key with: %s",
+                key_len, _GEN_CMD,
+            )
+        else:
+            _log.info("AI_KEY_ENCRYPTION_KEY is set and correctly sized (44 chars).")
 
     if not os.environ.get("WEBHOOK_SECRET"):
         _log.warning(

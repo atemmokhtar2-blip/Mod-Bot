@@ -5,10 +5,11 @@ Boot sequence
 -------------
 1. Load config from environment variables
 2. Set up logging
-3. Initialise the database (create / migrate tables)
-4. Build Bot + Dispatcher  ← via bot/setup.py (shared with api/webhook.py)
-5. Register bot commands (Arabic labels shown in Telegram UI)
-6. Start long-polling
+3. Run startup validation (encryption, DB, Telegram API)
+4. Initialise the database (create / migrate tables)
+5. Build Bot + Dispatcher  ← via bot/setup.py (shared with api/webhook.py)
+6. Register bot commands (Arabic labels shown in Telegram UI)
+7. Start long-polling
 
 Run modes
 ---------
@@ -31,6 +32,16 @@ from bot.setup import create_bot, create_dispatcher
 from utils.logger import get_logger, setup_logging
 
 
+async def _notify_owners(bot, owner_ids: frozenset[int], text: str) -> None:
+    """Send a plain-text DM to every configured bot owner. Never raises."""
+    for uid in owner_ids:
+        try:
+            await bot.send_message(uid, text, parse_mode="HTML")
+        except Exception as exc:
+            log = get_logger("main")
+            log.warning("Could not notify owner %s: %s", uid, exc)
+
+
 async def main() -> None:
     # ------------------------------------------------------------------
     # Config & logging
@@ -44,6 +55,23 @@ async def main() -> None:
     log.info("Starting Telegram Moderation Bot v4.1 (Advanced Profanity Filter)…")
 
     # ------------------------------------------------------------------
+    # Startup validation — run before touching the DB or registering handlers
+    # ------------------------------------------------------------------
+    from utils.startup_checks import run_startup_checks, format_report, has_critical_failures
+
+    log.info("Running startup validation…")
+    results = await run_startup_checks(config.bot_token)
+    report_text = format_report(results)
+    for line in report_text.splitlines():
+        log.info("%s", line)
+
+    if has_critical_failures(results):
+        log.error(
+            "One or more CRITICAL startup checks failed — see report above. "
+            "The bot will still attempt to start, but may not function correctly."
+        )
+
+    # ------------------------------------------------------------------
     # Database — create / migrate tables
     # ------------------------------------------------------------------
     await init_db()
@@ -51,8 +79,30 @@ async def main() -> None:
     # ------------------------------------------------------------------
     # Bot & Dispatcher  (shared factory — same setup used by webhook)
     # ------------------------------------------------------------------
-    bot = create_bot(config)
-    dp  = create_dispatcher()
+    bot  = create_bot(config)
+    dp   = create_dispatcher()
+
+    # ------------------------------------------------------------------
+    # Notify owners of any startup problems via Telegram DM
+    # ------------------------------------------------------------------
+    if config.bot_owner_ids:
+        failures = [r for r in results if not r["ok"]]
+        if failures:
+            # Build a compact Telegram-friendly alert (HTML)
+            crit  = [r for r in failures if r["severity"] == "critical"]
+            warns = [r for r in failures if r["severity"] == "warning"]
+            lines = ["<b>⚠️ تحذير بدء التشغيل</b>"]
+            if crit:
+                lines.append(f"\n🔴 <b>{len(crit)} مشكلة حرجة:</b>")
+                for r in crit:
+                    lines.append(f"  • [{r['name']}] {r['message']}")
+                    if r.get("detail"):
+                        lines.append(f"    <code>{r['detail'][:200]}</code>")
+            if warns:
+                lines.append(f"\n⚠️ <b>{len(warns)} تحذير:</b>")
+                for r in warns:
+                    lines.append(f"  • [{r['name']}] {r['message']}")
+            await _notify_owners(bot, config.bot_owner_ids, "\n".join(lines))
 
     # ------------------------------------------------------------------
     # Bot commands menu — Arabic labels shown in Telegram UI
