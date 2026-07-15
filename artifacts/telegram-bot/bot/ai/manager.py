@@ -29,7 +29,7 @@ from bot.ai.base import AIProvider, AIVerdict
 from bot.ai.gemini_provider import GeminiProvider
 from bot.ai.key_manager import key_manager
 from database import repository as repo
-from utils.crypto import decrypt_secret
+from utils.crypto import decrypt_secret, EncryptionNotConfigured
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -96,10 +96,13 @@ class AIProtectionManager:
 
             try:
                 plaintext_key = decrypt_secret(key_row.api_key)
-            except ValueError:
-                # Corrupt/undecryptable row (e.g. wrong AI_KEY_ENCRYPTION_KEY) —
-                # never crash moderation for this; cool it down and try the next key.
-                log.error("AI provider=%s key_id=%s could not be decrypted — skipping.", provider, key_row.id)
+            except (ValueError, EncryptionNotConfigured) as exc:
+                # Corrupt/undecryptable row (e.g. wrong AI_KEY_ENCRYPTION_KEY) or
+                # encryption not configured — never crash moderation; skip AI entirely.
+                log.error(
+                    "AI provider=%s key_id=%s could not be decrypted (%s: %s) — skipping.",
+                    provider, key_row.id, type(exc).__name__, exc,
+                )
                 key_manager.mark_cooldown(key_row.id)
                 continue
 

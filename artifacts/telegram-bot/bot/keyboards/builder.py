@@ -174,11 +174,11 @@ def group_panel_kb(group_id: int) -> InlineKeyboardMarkup:
 # ---------------------------------------------------------------------------
 
 _PROT_FILTERS = [
-    ("insults",            S.filter_insults),
     ("telegram_links",     S.filter_telegram_links),
-    ("spam",               S.filter_spam),
     ("duplicate_messages", S.filter_duplicates),
     ("advertisement",      S.filter_advertisement),
+    ("flood",              S.filter_flood),
+    ("bad_words",          S.filter_bad_words),
 ]
 
 
@@ -454,10 +454,9 @@ def v4_settings_menu_kb(group_id: int) -> InlineKeyboardMarkup:
 # V4 Protection — all 14 filters
 # ---------------------------------------------------------------------------
 
-# All 14 filters shown on V4 protection page
+# All active filters shown on V4 protection page
 _V4_ALL_FILTERS = [
-    ("insults",            S.filter_insults),
-    ("spam",               S.filter_spam),
+    ("bad_words",          S.filter_bad_words),
     ("flood",              S.filter_flood),
     ("duplicate_messages", S.filter_duplicates),
     ("advertisement",      S.filter_advertisement),

@@ -12,7 +12,6 @@ instructions, so we extract the first `{...}` block rather than trusting
 from __future__ import annotations
 
 import json
-import re
 
 from bot.ai.base import AIProvider, AIVerdict, CLASSIFICATIONS, RECOMMENDED_ACTIONS
 from bot.ai.prompts import (
@@ -27,15 +26,33 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 _MODEL = "gemini-2.5-flash"
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _extract_first_json(text: str) -> dict:
+    """
+    Extract the first complete, valid JSON object from *text*.
+
+    Uses json.JSONDecoder.raw_decode() which correctly handles nested braces
+    and stops at the end of the first well-formed object — unlike a greedy
+    regex which would grab everything up to the last ``}`` and break when
+    Gemini returns multiple JSON blocks or trailing prose.
+    """
+    decoder = json.JSONDecoder()
+    # Scan forward from each '{' until raw_decode succeeds.
+    idx = text.find("{")
+    while idx != -1:
+        try:
+            obj, _ = decoder.raw_decode(text, idx)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+        idx = text.find("{", idx + 1)
+    raise ValueError(f"No JSON object found in Gemini response: {text[:200]!r}")
 
 
 def _parse_verdict(raw_text: str | None) -> AIVerdict:
-    match = _JSON_RE.search(raw_text or "")
-    if not match:
-        raise ValueError(f"No JSON object found in Gemini response: {(raw_text or '')[:200]!r}")
-
-    data = json.loads(match.group(0))
+    data = _extract_first_json(raw_text or "")
 
     classification = str(data.get("classification", "SAFE")).upper()
     if classification not in CLASSIFICATIONS:

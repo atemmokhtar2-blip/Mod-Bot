@@ -23,7 +23,7 @@ Filter execution order (V4.1)
 10. long_messages
 11. mass_mention   (V4)
 12. hashtag        (V4)
-13. spam / insults — placeholder hooks
+13. AI text analysis (V6) — handles insults, spam, harassment, threats, scams
 Media locks are checked separately before all text filters.
 """
 

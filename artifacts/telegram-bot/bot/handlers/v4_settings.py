@@ -73,6 +73,7 @@ from bot.keyboards.builder import (
 )
 from bot.strings.ar import S
 from database import repository as repo
+from utils.ai_helpers import gemini_err_to_arabic as _gemini_err_to_arabic
 from utils.helpers import escape_html, format_welcome, mention_html
 from utils.logger import get_logger
 
@@ -1063,23 +1064,6 @@ async def cb_v4_ai_status(cb: CallbackQuery, session: AsyncSession) -> None:
         reply_markup=v4_ai_status_kb(group_id),
     )
 
-
-def _gemini_err_to_arabic(err: str | None) -> str:
-    """Map a raw Gemini error string to a specific Arabic user message."""
-    if not err:
-        return S.ai_key_invalid_gemini
-    e = err.lower()
-    if any(k in e for k in ("api_key_invalid", "invalid api key", "api key not valid", "invalid_api_key")):
-        return S.ai_key_err_api_invalid
-    if any(k in e for k in ("quota", "resource_exhausted", "429", "rate limit", "ratelimitexceeded")):
-        return S.ai_key_err_quota
-    if any(k in e for k in ("permission_denied", "403", "forbidden")):
-        return S.ai_key_err_permission
-    if any(k in e for k in ("model not found", "not found", "404", "model_not_found", "unsupported")):
-        return S.ai_key_err_model
-    if any(k in e for k in ("network", "connection", "timeout", "timed out")):
-        return S.ai_key_err_network
-    return S.ai_key_err_unknown.format(detail=err[:120].strip())
 
 
 @router.callback_query(F.data.startswith("v4s:ai_test:"))
