@@ -3,7 +3,7 @@
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": ".tsbuildinfo",
-    "noEmit": true,
+    "outDir": "out-tsc",
     "rootDir": "src",
     "types": ["node"]
   },
