@@ -241,7 +241,7 @@ class AIProtectionManager:
 
         try:
             plaintext_key = decrypt_secret(key_row.api_key)
-        except ValueError as exc:
+        except (ValueError, EncryptionNotConfigured) as exc:
             return {"ok": False, "error": f"key_decrypt_error: {exc}"}
 
         try:

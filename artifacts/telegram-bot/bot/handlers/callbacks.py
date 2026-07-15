@@ -147,7 +147,7 @@ async def cb_groups(cb: CallbackQuery, session: AsyncSession) -> None:
 @router.callback_query(F.data == "menu:channels")
 async def cb_channels(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)
-    channels = await repo.get_all_channels(session)
+    channels = await repo.get_channels_for_user(session, cb.from_user.id)
     if not channels:
         await _edit(cb, S.channels_none, reply_markup=back_kb("menu:home"))
         return
@@ -355,13 +355,13 @@ async def cb_prot_menu(cb: CallbackQuery, session: AsyncSession) -> None:
     settings = await repo.get_settings(session, group_id)
     auto     = settings.auto_protect_enabled if settings else False
 
-    # Build the filter status lines for the header
+    # Build the filter status lines for the header — must match _PROT_FILTERS in builder.py
     _PROT_MAP = [
-        ("insults",            S.filter_insults),
         ("telegram_links",     S.filter_telegram_links),
-        ("spam",               S.filter_spam),
         ("duplicate_messages", S.filter_duplicates),
         ("advertisement",      S.filter_advertisement),
+        ("flood",              S.filter_flood),
+        ("bad_words",          S.filter_bad_words),
     ]
     fmap = {f.filter_type: f for f in filters}
     lines = []
@@ -410,11 +410,11 @@ async def cb_prot_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
     auto     = settings.auto_protect_enabled if settings else False
 
     _PROT_MAP = [
-        ("insults",            S.filter_insults),
         ("telegram_links",     S.filter_telegram_links),
-        ("spam",               S.filter_spam),
         ("duplicate_messages", S.filter_duplicates),
         ("advertisement",      S.filter_advertisement),
+        ("flood",              S.filter_flood),
+        ("bad_words",          S.filter_bad_words),
     ]
     fmap  = {f.filter_type: f for f in filters}
     lines = []
@@ -458,11 +458,11 @@ async def cb_prot_auto(cb: CallbackQuery, session: AsyncSession) -> None:
     # Re-render protection menu
     filters  = await repo.get_filters(session, group_id)
     _PROT_MAP = [
-        ("insults",            S.filter_insults),
         ("telegram_links",     S.filter_telegram_links),
-        ("spam",               S.filter_spam),
         ("duplicate_messages", S.filter_duplicates),
         ("advertisement",      S.filter_advertisement),
+        ("flood",              S.filter_flood),
+        ("bad_words",          S.filter_bad_words),
     ]
     fmap  = {f.filter_type: f for f in filters}
     lines = []
@@ -986,6 +986,10 @@ async def cb_ch_select(cb: CallbackQuery, session: AsyncSession) -> None:
     if not channel:
         await _edit(cb, S.not_found, reply_markup=back_kb("menu:channels"))
         return
+    # Security: only the channel owner may open its panel
+    if channel.owner_id != cb.from_user.id:
+        await _answer_alert(cb, S.no_permission_cb)
+        return
     await _edit(
         cb,
         f"📢 <b>{escape_html(channel.title)}</b>",
@@ -995,4 +999,9 @@ async def cb_ch_select(cb: CallbackQuery, session: AsyncSession) -> None:
 
 @router.callback_query(F.data.startswith("ch:pin:"))
 async def cb_ch_pin(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
+    channel_id = int(cb.data.split(":")[2])
+    channel    = await repo.get_channel(session, channel_id)
+    if not channel or channel.owner_id != cb.from_user.id:
+        await _answer_alert(cb, S.no_permission_cb)
+        return
     await _answer(cb, "استخدم /pin داخل القناة لتثبيت آخر منشور.")

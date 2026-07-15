@@ -189,6 +189,14 @@ async def get_all_channels(session: AsyncSession) -> list[Channel]:
     return result.scalars().all()
 
 
+async def get_channels_for_user(session: AsyncSession, user_id: int) -> list[Channel]:
+    """Return all active channels owned by user_id."""
+    result = await session.execute(
+        select(Channel).where(Channel.owner_id == user_id, Channel.is_active == True)
+    )
+    return result.scalars().all()
+
+
 # ============================================================
 # Group Settings
 # ============================================================

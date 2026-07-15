@@ -171,20 +171,24 @@ class GeminiProvider(AIProvider):
 
     async def test_connection(self, api_key: str) -> dict:
         """RC1: Timed Gemini ping — returns {"model", "latency_ms"}. Raises on failure."""
+        import asyncio
         import time
         from google import genai
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
         t0 = time.monotonic()
-        await client.aio.models.generate_content(
-            model=_MODEL,
-            contents="ping",
-            config=types.GenerateContentConfig(
-                system_instruction="Reply with exactly: OK",
-                temperature=0,
-                max_output_tokens=5,
+        await asyncio.wait_for(
+            client.aio.models.generate_content(
+                model=_MODEL,
+                contents="ping",
+                config=types.GenerateContentConfig(
+                    system_instruction="Reply with exactly: OK",
+                    temperature=0,
+                    max_output_tokens=5,
+                ),
             ),
+            timeout=30.0,
         )
         return {"model": _MODEL, "latency_ms": int((time.monotonic() - t0) * 1000)}
 
@@ -193,17 +197,27 @@ class GeminiProvider(AIProvider):
         V7.2: Perform a minimal REAL request to Gemini to confirm the key is
         valid before it is ever saved. Raises on any failure — caller decides
         how to surface that to the bot owner.
+
+        A 30-second timeout is enforced so the bot never hangs indefinitely
+        waiting for a response (e.g. on network issues or Gemini overload).
         """
+        import asyncio
         from google import genai
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
-        await client.aio.models.generate_content(
-            model=_MODEL,
-            contents="ping",
-            config=types.GenerateContentConfig(
-                system_instruction="Reply with exactly: OK",
-                temperature=0,
-                max_output_tokens=5,
-            ),
-        )
+        try:
+            await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=_MODEL,
+                    contents="ping",
+                    config=types.GenerateContentConfig(
+                        system_instruction="Reply with exactly: OK",
+                        temperature=0,
+                        max_output_tokens=5,
+                    ),
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError("انتهت مهلة التحقق (30 ثانية) — تحقق من الاتصال بالإنترنت وأعد المحاولة.")

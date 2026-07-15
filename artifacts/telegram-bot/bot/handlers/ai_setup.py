@@ -34,6 +34,7 @@ from bot.ai.key_manager import key_manager
 from bot.ai.manager import ai_manager
 from bot.filters.admin_filter import IsBotOwner
 from utils.ai_helpers import gemini_err_to_arabic as _gemini_err_to_arabic
+from utils.crypto import EncryptionNotConfigured
 from bot.keyboards.builder import (
     ai_key_delete_confirm_kb,
     ai_key_delete_menu_kb,
@@ -134,7 +135,19 @@ async def fsm_receive_key(message: Message, state: FSMContext, session: AsyncSes
         await verifying.edit_text(_gemini_err_to_arabic(_err), parse_mode="HTML", reply_markup=ai_setup_cancel_kb())
         return  # stay in the same state — let them try another key
 
-    key_row = await repo.add_ai_key(session, provider=_PROVIDER, api_key=raw, added_by=message.from_user.id)
+    try:
+        key_row = await repo.add_ai_key(session, provider=_PROVIDER, api_key=raw, added_by=message.from_user.id)
+    except EncryptionNotConfigured as exc:
+        log.error("ai_key_save_failed: encryption not configured: %s", exc)
+        await verifying.edit_text(
+            "⛔ <b>خطأ في التشفير</b>\n\n"
+            "متغير البيئة <code>AI_KEY_ENCRYPTION_KEY</code> غير مضبوط بشكل صحيح.\n"
+            "يُرجى ضبطه على مفتاح Fernet صالح (44 حرفًا base64) وإعادة تشغيل البوت.",
+            parse_mode="HTML",
+            reply_markup=ai_setup_cancel_kb(),
+        )
+        return
+
     key_manager.invalidate(_PROVIDER)
     await state.clear()
     log.info("ai_key_added: key_id=%s added_by=%s via inline wizard (verified)", key_row.id, message.from_user.id)

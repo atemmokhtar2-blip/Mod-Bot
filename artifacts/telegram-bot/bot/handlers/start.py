@@ -1,17 +1,22 @@
 """
-/start command handler — Version 3.
+/start command handler — Version 3.1 (Security hardened).
 
 Handles:
   - Plain /start  → show home dashboard
   - /start grp_{group_id}  → deep link from "➕ إدارة هذه المجموعة" button in group.
-    Registers the user as owner of that group and shows its panel directly.
 
-Future: onboarding wizard for first-time users, language selection.
+Security (V3.1)
+---------------
+The deep link handler now ALWAYS verifies the user's actual Telegram role via
+get_chat_member() before granting any panel access or writing to the DB.
+A member who simply obtains or guesses a grp_XXXX URL is denied immediately.
+Owner auto-assignment only fires when the Telegram API confirms the user is
+the group "creator" AND the group currently has no owner in the DB.
 """
 
 from __future__ import annotations
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +33,7 @@ router = Router(name="start")
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, session: AsyncSession) -> None:
+async def cmd_start(message: Message, bot: Bot, session: AsyncSession) -> None:
     """Entry point — works in private chat, handles optional deep link."""
     user = message.from_user
     if not user:
@@ -44,7 +49,8 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
     )
 
     # ------------------------------------------------------------------
-    # V3: Deep link handling — /start grp_{group_id}
+    # V3.1: Deep link handling — /start grp_{group_id}
+    # SECURITY: Always verify Telegram membership before any DB write.
     # ------------------------------------------------------------------
     args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
     if args.startswith("grp_"):
@@ -56,30 +62,57 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         if group_id:
             group = await repo.get_group(session, group_id)
             if group:
-                # Register this user as owner if not already set
-                if not group.owner_id:
+                # ── Step 1: Verify actual Telegram role via live API ──────────
+                # Never trust the deep link alone — anyone can construct a URL.
+                try:
+                    member = await bot.get_chat_member(group_id, user.id)
+                    tg_status = member.status  # "creator" | "administrator" | "member" | ...
+                except Exception as exc:
+                    log.warning(
+                        "deep_link: get_chat_member failed user=%s group=%s: %s",
+                        user.id, group_id, exc,
+                    )
+                    await message.answer(S.no_permission_cb)
+                    return
+
+                if tg_status not in ("creator", "administrator"):
+                    log.info(
+                        "deep_link: denied user=%s group=%s tg_status=%s (not admin)",
+                        user.id, group_id, tg_status,
+                    )
+                    await message.answer(S.no_permission_cb)
+                    return
+
+                # ── Step 2: Auto-assign owner only when safe to do so ─────────
+                # Conditions: user IS the Telegram creator AND no DB owner set yet.
+                if not group.owner_id and tg_status == "creator":
                     await repo.set_owner(session, group_id, user.id)
                     group = await repo.get_group(session, group_id)
-                    log.info("owner_assigned: group_id=%s user_id=%s via deep link", group_id, user.id)
+                    log.info(
+                        "owner_assigned: group_id=%s user_id=%s via deep link (creator verified)",
+                        group_id, user.id,
+                    )
 
-                # Ensure this user is always recognised as a manager of this
-                # group going forward (plain /start, menu:groups, etc.), not
-                # just via the deep link itself. Bot is already in the group —
-                # never make them add it again.
-                try:
-                    await repo.add_admin(session, group_id=group_id, user_id=user.id, added_by=user.id)
-                    log.info("admin_synced: group_id=%s user_id=%s via deep link", group_id, user.id)
-                except Exception as exc:
-                    log.warning("admin_synced: deep-link sync failed for group_id=%s user_id=%s: %s",
-                               group_id, user.id, exc)
+                # ── Step 3: DB authorisation check ────────────────────────────
+                # The user must be owner or pre-registered admin in the DB.
+                if not await repo.is_authorized(session, group_id, user.id):
+                    log.info(
+                        "deep_link: not in DB as owner/admin user=%s group=%s tg_status=%s",
+                        user.id, group_id, tg_status,
+                    )
+                    await message.answer(S.no_permission_cb)
+                    return
 
-                # Show the success message and the group panel directly
+                # ── Step 4: Grant access ───────────────────────────────────────
                 await message.answer(
                     S.group_linked.format(title=escape_html(group.title)),
                     parse_mode="HTML",
                     reply_markup=group_panel_kb(group_id),
                 )
-                log.info("User %s linked group %s via deep link", user.id, group_id)
+                log.info(
+                    "deep_link: user=%s granted panel access group=%s tg_status=%s",
+                    user.id, group_id, tg_status,
+                )
                 return
             else:
                 log.warning(
@@ -111,4 +144,4 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         reply_markup=main_menu_kb(groups, is_bot_owner=is_bot_owner_id(user.id)),
         parse_mode="HTML",
     )
-    log.info("User %s opened the dashboard (v3)", user.id)
+    log.info("User %s opened the dashboard (v3.1)", user.id)
