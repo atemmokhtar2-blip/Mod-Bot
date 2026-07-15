@@ -4,6 +4,8 @@
 
   "installCommand": "pnpm install --frozen-lockfile",
 
+  "buildCommand": "pnpm --filter @workspace/api-server run build",
+
   "functions": {
     "api/webhook.py": {
       "runtime": "python3.12",
