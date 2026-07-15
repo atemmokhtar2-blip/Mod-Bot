@@ -22,6 +22,8 @@ cd artifacts/telegram-bot && python main.py
 | Secret | Description |
 |--------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather on Telegram |
+| `BOT_OWNER_IDS` | Your Telegram numeric user ID(s), comma-separated — grants access to `/addaikey`, `/listaikeys`, and the AI wizard |
+| `AI_KEY_ENCRYPTION_KEY` | Fernet key for encrypting stored Gemini API keys — generate with `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 
 `DATABASE_URL` is auto-provided by Replit's built-in PostgreSQL — no configuration needed.
 
