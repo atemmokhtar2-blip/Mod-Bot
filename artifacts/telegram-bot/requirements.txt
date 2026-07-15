@@ -8,3 +8,7 @@ greenlet==3.5.3
 
 # Utilities
 pytz==2026.2
+
+# AI (Gemini) + key encryption
+google-genai==2.8.0
+cryptography==49.0.0

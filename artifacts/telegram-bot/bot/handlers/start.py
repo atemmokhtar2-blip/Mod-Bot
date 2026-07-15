@@ -16,6 +16,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.filters.admin_filter import is_bot_owner_id
 from bot.keyboards.builder import group_panel_kb, main_menu_kb
 from bot.strings.ar import S
 from database import repository as repo
@@ -107,7 +108,7 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
 
     await message.answer(
         text,
-        reply_markup=main_menu_kb(groups),
+        reply_markup=main_menu_kb(groups, is_bot_owner=is_bot_owner_id(user.id)),
         parse_mode="HTML",
     )
     log.info("User %s opened the dashboard (v3)", user.id)

@@ -44,12 +44,14 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.filters.admin_filter import is_bot_owner_id
 from bot.keyboards.builder import (
     _ACTION_LABELS,
     _FILTER_LABELS,
     _V4_ALL_FILTERS,
     _V4_MEDIA_LOCKS,
     _V4_PERMS,
+    ai_setup_wizard_kb,
     back_kb,
     v4_ai_actions_kb,
     v4_ai_sensitivity_kb,
@@ -882,6 +884,19 @@ async def cb_v4_ai_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
         session, group_id=group_id, event_type="settings_changed",
         actor_id=cb.from_user.id, details=f"ai_enabled → {new_state}",
     )
+
+    # V7.1: if the person enabling AI is also the bot owner and no Gemini key
+    # has ever been registered, send them straight to the setup wizard instead
+    # of leaving them looking at a silent 🔴 "no keys" status. Group owners who
+    # are NOT the bot owner never see this — they can't manage keys anyway.
+    if new_state and is_bot_owner_id(cb.from_user.id):
+        counts = await repo.count_ai_keys(session, "gemini")
+        if counts["total"] == 0 and cb.message:
+            await cb.message.edit_text(
+                S.ai_setup_wizard_title, parse_mode="HTML", reply_markup=ai_setup_wizard_kb(),
+            )
+            return
+
     await _rerender_ai_panel(cb, session, group_id)
 
 

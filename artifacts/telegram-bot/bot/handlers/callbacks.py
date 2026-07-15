@@ -40,6 +40,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.filters.admin_filter import is_bot_owner_id
 from bot.keyboards.builder import (
     admins_list_kb,
     back_kb,
@@ -130,7 +131,7 @@ async def cb_home(cb: CallbackQuery, session: AsyncSession) -> None:
         title = S.home_title.format(name=name, group=escape_html(groups[0].title))
     else:
         title = S.home_title_no_group.format(name=name)
-    await _edit(cb, title, reply_markup=main_menu_kb(groups))
+    await _edit(cb, title, reply_markup=main_menu_kb(groups, is_bot_owner=is_bot_owner_id(cb.from_user.id)))
 
 
 @router.callback_query(F.data == "menu:groups")

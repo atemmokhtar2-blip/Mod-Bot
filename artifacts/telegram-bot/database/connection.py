@@ -147,6 +147,10 @@ async def init_db() -> None:
         "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_action_warn BOOLEAN DEFAULT FALSE",
         "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_action_mute BOOLEAN DEFAULT FALSE",
         "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_action_ban BOOLEAN DEFAULT FALSE",
+
+        # V7.1: encrypted Gemini keys — masked display value stored separately
+        # so normal reads never need to decrypt the key.
+        "ALTER TABLE ai_provider_keys ADD COLUMN IF NOT EXISTS key_mask VARCHAR(64)",
     ]
 
     async with engine.begin() as conn:
@@ -156,4 +160,57 @@ async def init_db() -> None:
             except Exception as exc:
                 log.warning("Migration skipped: %s", exc)
 
-    log.info("Database tables initialised (V7).")
+    await _encrypt_legacy_plaintext_keys()
+
+    log.info("Database tables initialised (V7.1).")
+
+
+async def _encrypt_legacy_plaintext_keys() -> None:
+    """
+    V7.1 one-time data migration: any Gemini key stored before encryption was
+    introduced is still plaintext in `api_key`. Detect those rows (not a valid
+    Fernet token) and encrypt them in place, backfilling `key_mask` too.
+    Idempotent — rows that are already encrypted (and already have a mask)
+    are left untouched, so this is safe to run on every boot.
+    """
+    from sqlalchemy import select, update
+    from database.models import AIProviderKey
+    from utils.crypto import EncryptionNotConfigured, encrypt_secret, is_encrypted, mask
+
+    try:
+        async with async_session() as session:
+            rows = (await session.execute(select(AIProviderKey))).scalars().all()
+            migrated = 0
+            for row in rows:
+                if row.key_mask and is_encrypted(row.api_key):
+                    continue  # already migrated
+                try:
+                    plaintext = row.api_key
+                    if is_encrypted(plaintext):
+                        # Encrypted already but missing its mask (shouldn't
+                        # normally happen) — we cannot recover the plaintext
+                        # to mask it without the original value, so use a
+                        # generic placeholder rather than ever decrypting
+                        # just for display purposes.
+                        new_mask = row.key_mask or "••••••••"
+                        await session.execute(
+                            update(AIProviderKey).where(AIProviderKey.id == row.id)
+                            .values(key_mask=new_mask)
+                        )
+                    else:
+                        new_mask = mask(plaintext)
+                        encrypted = encrypt_secret(plaintext)
+                        await session.execute(
+                            update(AIProviderKey).where(AIProviderKey.id == row.id)
+                            .values(api_key=encrypted, key_mask=new_mask)
+                        )
+                    migrated += 1
+                except Exception as exc:
+                    log.warning("Could not migrate legacy AI key id=%s: %s", row.id, exc)
+            if migrated:
+                await session.commit()
+                log.info("Encrypted %d legacy Gemini key row(s) in place.", migrated)
+    except EncryptionNotConfigured as exc:
+        log.warning("Skipping legacy AI key encryption migration: %s", exc)
+    except Exception as exc:
+        log.warning("Legacy AI key encryption migration failed: %s", exc)

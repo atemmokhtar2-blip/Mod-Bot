@@ -42,3 +42,10 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["cargo", "libiconv", "libxcrypt", "openssl", "pkg-config", "postgresql", "rustc"]
+
+[userenv]
+
+[userenv.shared]
+AI_KEY_ENCRYPTION_KEY = "RfXN5g7rTtMzWKicrKeGSET0cm1W97CfO_StnL-cNwA="
+BOT_OWNER_IDS = "7631249810"
+WEBHOOK_SECRET = "baceaeda7fba57b84db94940bb033c44de54311fd80aa473"

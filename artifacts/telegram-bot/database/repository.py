@@ -674,9 +674,23 @@ async def add_ai_key(
     session: AsyncSession, *, provider: str, api_key: str,
     label: str | None = None, added_by: int | None = None,
 ) -> AIProviderKey:
-    key_row = AIProviderKey(provider=provider, api_key=api_key, label=label, added_by=added_by)
+    """
+    Store a new provider key. `api_key` is the raw plaintext key supplied by
+    the bot owner — it is masked (for display) and then ENCRYPTED before
+    anything touches the database. The plaintext never reaches disk or logs.
+    """
+    from utils.crypto import encrypt_secret, mask
+
+    key_mask = mask(api_key)
+    encrypted = encrypt_secret(api_key)
+    key_row = AIProviderKey(
+        provider=provider, api_key=encrypted, key_mask=key_mask,
+        label=label, added_by=added_by,
+    )
     session.add(key_row)
     await session.commit()
+    log.info("ai_key_added: provider=%s key_id=%s mask=%s added_by=%s",
+              provider, key_row.id, key_mask, added_by)
     return key_row
 
 

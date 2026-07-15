@@ -44,7 +44,11 @@ def manage_group_url_kb(group_id: int, bot_username: str) -> InlineKeyboardMarku
 # Main dashboard (private chat)
 # ---------------------------------------------------------------------------
 
-def main_menu_kb(groups: list[Group], active_group_id: int | None = None) -> InlineKeyboardMarkup:
+def main_menu_kb(
+    groups: list[Group],
+    active_group_id: int | None = None,
+    is_bot_owner: bool = False,
+) -> InlineKeyboardMarkup:
     """V5 main dashboard — full menu with updates channel & donations."""
     builder = InlineKeyboardBuilder()
     rows: list[int] = []
@@ -71,10 +75,66 @@ def main_menu_kb(groups: list[Group], active_group_id: int | None = None) -> Inl
     builder.button(text=S.btn_donate,          callback_data="donate:menu")
     rows.append(2)
 
+    if is_bot_owner:
+        # V7.1: global Gemini key manager — bot-owner only, never shown to
+        # group owners/admins (they only control per-group AI toggles).
+        builder.button(text=S.btn_ai_key_manager, callback_data="aisetup:open")
+        rows.append(1)
+
     builder.button(text=S.btn_help, callback_data="menu:help")
     rows.append(1)
 
     builder.adjust(*rows)
+    return builder.as_markup()
+
+
+# ---------------------------------------------------------------------------
+# V7.1 — Gemini API key setup wizard (bot-owner only)
+# ---------------------------------------------------------------------------
+
+def ai_setup_wizard_kb() -> InlineKeyboardMarkup:
+    """No keys registered yet — first-time setup wizard."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=S.btn_ai_add_key, callback_data="aisetup:add")
+    builder.row(InlineKeyboardButton(text=S.btn_back, callback_data="menu:home"))
+    return builder.as_markup()
+
+
+def ai_key_manager_kb(keys: list) -> InlineKeyboardMarkup:
+    """Keys already exist — management screen with per-key delete buttons."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=S.btn_ai_add_key,    callback_data="aisetup:add")
+    builder.button(text=S.btn_ai_del_key,    callback_data="aisetup:delmenu")
+    builder.button(text=S.btn_ai_count_only, callback_data="aisetup:count")
+    builder.row(InlineKeyboardButton(text=S.btn_back, callback_data="menu:home"))
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def ai_key_delete_menu_kb(keys: list) -> InlineKeyboardMarkup:
+    """List of keys as buttons — pressing one deletes that key (after confirmation)."""
+    builder = InlineKeyboardBuilder()
+    for k in keys:
+        label = f"❌ #{k.id} — {k.masked_key()}"
+        if k.label:
+            label += f" ({k.label})"
+        builder.button(text=label, callback_data=f"aisetup:delconfirm:{k.id}")
+    builder.row(InlineKeyboardButton(text=S.btn_back, callback_data="aisetup:open"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def ai_key_delete_confirm_kb(key_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=S.btn_confirm_delete, callback_data=f"aisetup:del:{key_id}")
+    builder.button(text=S.btn_back,            callback_data="aisetup:delmenu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def ai_setup_cancel_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=S.btn_cancel, callback_data="aisetup:open")
     return builder.as_markup()
 
 

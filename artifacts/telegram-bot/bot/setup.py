@@ -27,6 +27,7 @@ from bot.handlers import v4_settings
 from bot.handlers import wordlist
 from bot.handlers import donations
 from bot.handlers import ai_admin
+from bot.handlers import ai_setup
 
 
 def create_bot(cfg: Config) -> Bot:
@@ -49,8 +50,9 @@ def create_dispatcher() -> Dispatcher:
       5. V5 donations (Telegram Stars) — pre_checkout_query / successful_payment
       6. Admin text commands (/ban, /mute, …)
       7. V4.1 word-list commands (/addword, …)
-      8. V6: global Gemini key-manager commands (bot-owner only)
-      9. Message filter — catches everything else (last)
+      8. V6: global Gemini key-manager commands (bot-owner only, slash commands)
+      9. V7.1: global Gemini key-manager inline wizard (bot-owner only, buttons)
+      10. Message filter — catches everything else (last)
     """
     dp = Dispatcher(storage=MemoryStorage())
     dp.update.middleware(DbSessionMiddleware())
@@ -63,6 +65,7 @@ def create_dispatcher() -> Dispatcher:
     dp.include_router(admin_commands.router)
     dp.include_router(wordlist.router)
     dp.include_router(ai_admin.router)
+    dp.include_router(ai_setup.router)
     dp.include_router(message_filter.router)
 
     return dp

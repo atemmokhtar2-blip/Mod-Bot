@@ -71,6 +71,7 @@ class S:
     btn_settings   = "⚙️ الإعدادات"
     btn_help       = "❓ المساعدة"
     btn_back       = "⬅️ رجوع"
+    btn_cancel     = "🔙 رجوع"
 
     # ─── V5: Updates channel & Donations ─────────────────────────────────────
     btn_updates_channel  = "📢 قناة التحديثات"
@@ -794,3 +795,48 @@ class S:
         "إجمالي المفاتيح: <b>{total}</b>\n"
         "المفاتيح المفعّلة: <b>{enabled}</b>\n"
     )
+
+    # ─── V7.1: Gemini key-manager — inline wizard (bot-owner only) ──────────────
+    btn_ai_key_manager = "🧠 إدارة مفاتيح Gemini"
+    btn_ai_add_key     = "➕ إضافة مفتاح"
+    btn_ai_del_key     = "❌ حذف مفتاح"
+    btn_ai_count_only  = "📋 عرض عدد المفاتيح فقط"
+    btn_confirm_delete = "❌ نعم، احذف"
+
+    ai_setup_wizard_title = (
+        "════════════════════\n"
+        "🧠 <b>إعداد Gemini</b>\n\n"
+        "لم يتم العثور على أي مفتاح Gemini.\n\n"
+        "يرجى إضافة مفتاح API للبدء.\n"
+        "════════════════════"
+    )
+
+    ai_setup_addkey_prompt = (
+        "📝 أرسل الآن مفتاح Gemini API كرسالة نصية.\n\n"
+        "⚠️ سيتم حذف رسالتك تلقائياً بعد الحفظ لحماية المفتاح."
+    )
+    ai_setup_addkey_invalid = "❌ هذا لا يبدو مفتاح API صالحاً. أرسل المفتاح فقط بدون أي نص إضافي."
+    ai_setup_key_saved = "✅ تم حفظ مفتاح Gemini بنجاح."
+    ai_setup_key_saved_dm_fallback = (
+        "✅ تم حفظ مفتاح Gemini بنجاح.\n"
+        "⚠️ تعذّر حذف رسالتك التي تحتوي على المفتاح — يُفضّل حذفها يدوياً الآن."
+    )
+
+    ai_setup_manager_title = (
+        "════════════════════\n"
+        "🧠 <b>إدارة مفاتيح Gemini</b>\n\n"
+        "عدد المفاتيح: <b>{total}</b> (🟢 {enabled} مفعّل)\n\n"
+        "{key_list}"
+        "════════════════════"
+    )
+    ai_setup_key_line = "🔑 {label}\n{status} {masked}\n"
+    ai_setup_key_label_default = "مفتاح #{id}"
+
+    ai_setup_delmenu_title = "اختر مفتاحاً لحذفه:"
+    ai_setup_delmenu_empty = "📭 لا توجد أي مفاتيح لحذفها."
+    ai_setup_delconfirm_title = "⚠️ هل أنت متأكد من حذف المفتاح #{key_id}؟\nلا يمكن التراجع عن هذا الإجراء."
+    ai_setup_key_deleted = "🗑️ تم حذف المفتاح بنجاح."
+
+    ai_setup_count_only = "📋 عدد مفاتيح Gemini المسجّلة: <b>{total}</b>\n🟢 المفعّلة منها: <b>{enabled}</b>"
+
+    ai_setup_not_owner = "❌ إدارة مفاتيح Gemini متاحة لمالك البوت فقط."

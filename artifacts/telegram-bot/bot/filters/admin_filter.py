@@ -84,6 +84,14 @@ class IsBotAdmin(BaseFilter):
             return False
 
 
+def is_bot_owner_id(user_id: int) -> bool:
+    """Plain helper (non-filter) for use in keyboard-building code, e.g. to
+    decide whether to show the bot-owner-only Gemini key manager button."""
+    from config import load_config
+
+    return user_id in load_config().bot_owner_ids
+
+
 class IsBotOwner(BaseFilter):
     """
     V6: True if from_user.id is listed in BOT_OWNER_IDS (config.bot_owner_ids).
@@ -94,10 +102,7 @@ class IsBotOwner(BaseFilter):
     """
 
     async def __call__(self, event: Message | CallbackQuery, **data) -> bool:
-        from config import load_config
-
         user = event.from_user
         if not user:
             return False
-        config = load_config()
-        return user.id in config.bot_owner_ids
+        return is_bot_owner_id(user.id)

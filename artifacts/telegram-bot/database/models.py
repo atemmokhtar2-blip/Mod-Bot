@@ -398,7 +398,11 @@ class AIProviderKey(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     provider: Mapped[str] = mapped_column(String(32), default="gemini")
     label: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # V7.1: `api_key` holds an ENCRYPTED token (see utils/crypto.py), never plaintext.
+    # `key_mask` is the display-safe masked form, computed once from the plaintext
+    # at insertion time — the full key is never decrypted again just to show it.
     api_key: Mapped[str] = mapped_column(Text)
+    key_mask: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -412,10 +416,14 @@ class AIProviderKey(Base):
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     def masked_key(self) -> str:
-        k = self.api_key
-        if len(k) <= 8:
-            return "•" * max(len(k), 4)
-        return f"{k[:4]}...{k[-4:]}"
+        """
+        Display-safe masked form. Always prefers the pre-computed `key_mask`
+        (set once at insertion, from the plaintext, before encryption) so
+        normal display code never needs to decrypt `api_key`.
+        """
+        if self.key_mask:
+            return self.key_mask
+        return "••••••••"  # legacy row with no mask yet (should self-heal on next migration pass)
 
 
 # ---------------------------------------------------------------------------
