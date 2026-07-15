@@ -1,28 +1,42 @@
 """
-/start command handler — Version 3.1 (Security hardened).
+/start command handler — Version 4.0 (Security hardened — live permission verification).
 
 Handles:
-  - Plain /start  → show home dashboard
+  - Plain /start  → show home dashboard (live-verified groups only)
   - /start grp_{group_id}  → deep link from "➕ إدارة هذه المجموعة" button in group.
 
-Security (V3.1)
+Security (V4.0)
 ---------------
-The deep link handler now ALWAYS verifies the user's actual Telegram role via
-get_chat_member() before granting any panel access or writing to the DB.
-A member who simply obtains or guesses a grp_XXXX URL is denied immediately.
-Owner auto-assignment only fires when the Telegram API confirms the user is
-the group "creator" AND the group currently has no owner in the DB.
+On every /start invocation — deep link OR plain — the handler:
+  1. Clears all FSM state to destroy any previous management session.
+  2. Verifies the user's CURRENT Telegram role via getChatMember().
+  3. Never trusts cached DB admin records.
+
+Deep link path:
+  - Always verifies via live API before granting any panel access.
+  - Denies anyone whose Telegram status is not creator/administrator.
+  - Owner auto-assignment fires ONLY when the Telegram API confirms "creator"
+    AND the group currently has no DB owner.
+
+Plain /start path:
+  - Loads groups from DB, then verifies live Telegram role for each group
+    where the user is registered as an admin (not owner).
+  - Stale admin DB records are pruned automatically for groups where the
+    user is no longer a Telegram administrator.
+  - Only verified groups appear in the dashboard.
 """
 
 from __future__ import annotations
 
 from aiogram import Bot, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.filters.admin_filter import is_bot_owner_id
 from bot.keyboards.builder import group_panel_kb, main_menu_kb
+from bot.security import verify_live_tg_permission
 from bot.strings.ar import S
 from database import repository as repo
 from utils.helpers import escape_html
@@ -33,11 +47,17 @@ router = Router(name="start")
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, bot: Bot, session: AsyncSession) -> None:
+async def cmd_start(message: Message, bot: Bot, session: AsyncSession, state: FSMContext) -> None:
     """Entry point — works in private chat, handles optional deep link."""
     user = message.from_user
     if not user:
         return
+
+    # ── SECURITY: Destroy every previous management session on /start ────────
+    # This prevents any stale FSM state, cached group selection, or old
+    # authorization data from carrying over to a new management session.
+    await state.clear()
+    log.info("session_cleared: user=%s (new /start)", user.id)
 
     # Upsert user record
     await repo.upsert_user(
@@ -49,7 +69,7 @@ async def cmd_start(message: Message, bot: Bot, session: AsyncSession) -> None:
     )
 
     # ------------------------------------------------------------------
-    # V3.1: Deep link handling — /start grp_{group_id}
+    # V4.0: Deep link handling — /start grp_{group_id}
     # SECURITY: Always verify Telegram membership before any DB write.
     # ------------------------------------------------------------------
     args = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
@@ -122,9 +142,49 @@ async def cmd_start(message: Message, bot: Bot, session: AsyncSession) -> None:
 
     # ------------------------------------------------------------------
     # Normal /start — show home dashboard
+    # SECURITY: Verify live Telegram role for each DB-registered admin group.
+    # Groups where the user is no longer a Telegram admin are filtered out
+    # and their stale DB records are pruned.
     # ------------------------------------------------------------------
-    groups = await repo.get_groups_for_user(session, user.id)
-    log.info("group_loaded: user_id=%s loaded %d group(s) for dashboard", user.id, len(groups))
+    raw_groups = await repo.get_groups_for_user(session, user.id)
+    log.info(
+        "dashboard_load: user_id=%s raw_db_groups=%d — verifying live permissions",
+        user.id, len(raw_groups),
+    )
+
+    verified_groups = []
+    for g in raw_groups:
+        is_owner_in_db = (g.owner_id == user.id)
+        if is_owner_in_db:
+            # Owner status was established via deep link with live creator check;
+            # Telegram group ownership cannot change, so this is safe.
+            verified_groups.append(g)
+        else:
+            # Admin — verify current Telegram role via live API.
+            live_ok = await verify_live_tg_permission(bot, g.group_id, user.id)
+            if live_ok:
+                verified_groups.append(g)
+            else:
+                # User was in the DB admins table but is no longer a Telegram admin.
+                # Prune the stale record so it doesn't reappear.
+                try:
+                    await repo.remove_admin(session, g.group_id, user.id)
+                    log.info(
+                        "stale_admin_pruned_on_start: user=%s group=%s",
+                        user.id, g.group_id,
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "stale_admin_prune_failed: user=%s group=%s — %s",
+                        user.id, g.group_id, exc,
+                    )
+
+    groups = verified_groups
+    log.info(
+        "dashboard_load: user_id=%s verified_groups=%d (pruned %d stale)",
+        user.id, len(groups), len(raw_groups) - len(groups),
+    )
+
     name = escape_html(user.first_name)
 
     if groups:
@@ -144,4 +204,4 @@ async def cmd_start(message: Message, bot: Bot, session: AsyncSession) -> None:
         reply_markup=main_menu_kb(groups, is_bot_owner=is_bot_owner_id(user.id)),
         parse_mode="HTML",
     )
-    log.info("User %s opened the dashboard (v3.1)", user.id)
+    log.info("User %s opened the dashboard (v4.0 security)", user.id)

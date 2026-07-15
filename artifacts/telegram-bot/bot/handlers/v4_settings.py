@@ -74,6 +74,7 @@ from bot.keyboards.builder import (
 from bot.strings.ar import S
 from database import repository as repo
 from utils.ai_helpers import gemini_err_to_arabic as _gemini_err_to_arabic
+from bot.security import ensure_authorized, ensure_owner
 from utils.helpers import escape_html, format_welcome, mention_html
 from utils.logger import get_logger
 
@@ -115,18 +116,10 @@ async def _edit(cb: CallbackQuery, text: str, reply_markup=None) -> None:
         pass
 
 
-async def _ensure_authorized(cb: CallbackQuery, session: AsyncSession, group_id: int) -> bool:
-    ok = await repo.is_authorized(session, group_id, cb.from_user.id)
-    if not ok:
-        await _answer_alert(cb, S.no_permission_cb)
-    return ok
+# _ensure_authorized removed — use bot.security.ensure_authorized (live Telegram API check).
 
 
-async def _ensure_owner(cb: CallbackQuery, session: AsyncSession, group_id: int) -> bool:
-    ok = await repo.is_owner(session, group_id, cb.from_user.id)
-    if not ok:
-        await _answer_alert(cb, S.owner_only_cb)
-    return ok
+# _ensure_owner removed — use bot.security.ensure_owner (live Telegram API check).
 
 
 def _lang_name(code: str) -> str:
@@ -138,10 +131,10 @@ def _lang_name(code: str) -> str:
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:menu:"))
-async def cb_v4_menu(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_menu(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group = await repo.get_group(session, group_id)
@@ -158,10 +151,10 @@ async def cb_v4_menu(cb: CallbackQuery, session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:protection:"))
-async def cb_v4_protection(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_protection(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group   = await repo.get_group(session, group_id)
@@ -175,13 +168,13 @@ async def cb_v4_protection(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:prot_toggle:"))
-async def cb_v4_prot_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_prot_toggle(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     parts    = cb.data.split(":")   # v4s:prot_toggle:{gid}:{ft}
     group_id = int(parts[2])
     ft       = parts[3]
 
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     f = await repo.get_filter(session, group_id, ft)
@@ -215,10 +208,10 @@ async def cb_v4_prot_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:punishments:"))
-async def cb_v4_punishments(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_punishments(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group   = await repo.get_group(session, group_id)
@@ -232,11 +225,11 @@ async def cb_v4_punishments(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:pf_pick:"))
-async def cb_v4_pf_pick(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_pf_pick(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     _, _, group_id_str, ft = cb.data.split(":", 3)
     group_id = int(group_id_str)
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     f = await repo.get_filter(session, group_id, ft)
@@ -256,14 +249,14 @@ async def cb_v4_pf_pick(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:pf_set:"))
-async def cb_v4_pf_set(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_pf_set(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     parts       = cb.data.split(":")   # v4s:pf_set:{gid}:{ft}:{action}
     group_id    = int(parts[2])
     ft          = parts[3]
     action      = parts[4]
 
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     await repo.update_filter(session, group_id, ft, action=action)
@@ -293,10 +286,10 @@ async def cb_v4_pf_set(cb: CallbackQuery, session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:perms:"))
-async def cb_v4_perms(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_perms(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group    = await repo.get_group(session, group_id)
@@ -312,13 +305,13 @@ async def cb_v4_perms(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:perm_toggle:"))
-async def cb_v4_perm_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_perm_toggle(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     _, _, group_id_str, perm_key = cb.data.split(":", 3)
     group_id = int(group_id_str)
 
     # Only the group owner can change permissions
-    if not await _ensure_owner(cb, session, group_id):
+    if not await ensure_owner(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -353,10 +346,10 @@ async def cb_v4_perm_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:welcome:"))
-async def cb_v4_welcome(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_welcome(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group    = await repo.get_group(session, group_id)
@@ -377,10 +370,10 @@ async def cb_v4_welcome(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:welcome_toggle:"))
-async def cb_v4_welcome_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_welcome_toggle(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -409,10 +402,10 @@ async def cb_v4_welcome_toggle(cb: CallbackQuery, session: AsyncSession) -> None
 
 
 @router.callback_query(F.data.startswith("v4s:welcome_edit:"))
-async def cb_v4_welcome_edit(cb: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+async def cb_v4_welcome_edit(cb: CallbackQuery, bot: Bot, session: AsyncSession, state: FSMContext) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -427,10 +420,10 @@ async def cb_v4_welcome_edit(cb: CallbackQuery, session: AsyncSession, state: FS
 
 
 @router.callback_query(F.data.startswith("v4s:welcome_preview:"))
-async def cb_v4_welcome_preview(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_welcome_preview(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -454,10 +447,10 @@ async def cb_v4_welcome_preview(cb: CallbackQuery, session: AsyncSession) -> Non
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:goodbye:"))
-async def cb_v4_goodbye(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_goodbye(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group    = await repo.get_group(session, group_id)
@@ -478,10 +471,10 @@ async def cb_v4_goodbye(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:goodbye_toggle:"))
-async def cb_v4_goodbye_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_goodbye_toggle(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -510,10 +503,10 @@ async def cb_v4_goodbye_toggle(cb: CallbackQuery, session: AsyncSession) -> None
 
 
 @router.callback_query(F.data.startswith("v4s:goodbye_edit:"))
-async def cb_v4_goodbye_edit(cb: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+async def cb_v4_goodbye_edit(cb: CallbackQuery, bot: Bot, session: AsyncSession, state: FSMContext) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -528,10 +521,10 @@ async def cb_v4_goodbye_edit(cb: CallbackQuery, session: AsyncSession, state: FS
 
 
 @router.callback_query(F.data.startswith("v4s:goodbye_preview:"))
-async def cb_v4_goodbye_preview(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_goodbye_preview(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -588,10 +581,10 @@ async def fsm_v4_goodbye_text(message: Message, session: AsyncSession, state: FS
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:media:"))
-async def cb_v4_media(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_media(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group    = await repo.get_group(session, group_id)
@@ -607,11 +600,11 @@ async def cb_v4_media(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:media_toggle:"))
-async def cb_v4_media_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_media_toggle(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     _, _, group_id_str, lock_key = cb.data.split(":", 3)
     group_id = int(group_id_str)
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -646,10 +639,10 @@ async def cb_v4_media_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:channel:"))
-async def cb_v4_channel(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_channel(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     channels = await repo.get_all_channels(session)
@@ -664,12 +657,12 @@ async def cb_v4_channel(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:ch_panel:"))
-async def cb_v4_ch_panel(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ch_panel(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     parts      = cb.data.split(":")   # v4s:ch_panel:{gid}:{chid}
     group_id   = int(parts[2])
     channel_id = int(parts[3])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     channel = await repo.get_channel(session, channel_id)
@@ -684,12 +677,12 @@ async def cb_v4_ch_panel(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:ch_info:"))
-async def cb_v4_ch_info(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ch_info(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     parts      = cb.data.split(":")
     group_id   = int(parts[2])
     channel_id = int(parts[3])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     channel = await repo.get_channel(session, channel_id)
@@ -715,7 +708,7 @@ async def cb_v4_ch_verify(cb: CallbackQuery, bot: Bot, session: AsyncSession) ->
     parts      = cb.data.split(":")
     group_id   = int(parts[2])
     channel_id = int(parts[3])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     try:
@@ -739,7 +732,7 @@ async def cb_v4_ch_pin(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> No
     parts      = cb.data.split(":")
     group_id   = int(parts[2])
     channel_id = int(parts[3])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     try:
@@ -758,7 +751,7 @@ async def cb_v4_ch_delete(cb: CallbackQuery, bot: Bot, session: AsyncSession) ->
     parts      = cb.data.split(":")
     group_id   = int(parts[2])
     channel_id = int(parts[3])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
     # Channel message deletion requires knowing the message_id which we don't have here.
     await _answer_alert(cb, "🗑️ استخدم /del داخل القناة بالرد على الرسالة المطلوبة.")
@@ -769,10 +762,10 @@ async def cb_v4_ch_delete(cb: CallbackQuery, bot: Bot, session: AsyncSession) ->
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:lang:"))
-async def cb_v4_lang(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_lang(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group    = await repo.get_group(session, group_id)
@@ -789,11 +782,11 @@ async def cb_v4_lang(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:lang_set:"))
-async def cb_v4_lang_set(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_lang_set(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     _, _, group_id_str, lang_code = cb.data.split(":", 3)
     group_id = int(group_id_str)
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     await repo.update_settings(session, group_id, language=lang_code)
@@ -843,10 +836,10 @@ async def _ai_system_status(session: AsyncSession, ai_enabled: bool) -> str:
 
 
 @router.callback_query(F.data.startswith("v4s:ai:"))
-async def cb_v4_ai(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     group         = await repo.get_group(session, group_id)
@@ -873,10 +866,10 @@ async def _rerender_ai_panel(cb: CallbackQuery, session: AsyncSession, group_id:
 
 
 @router.callback_query(F.data.startswith("v4s:ai_toggle:"))
-async def cb_v4_ai_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_toggle(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -903,10 +896,10 @@ async def cb_v4_ai_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:ai_toggle_msgs:"))
-async def cb_v4_ai_toggle_msgs(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_toggle_msgs(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -915,10 +908,10 @@ async def cb_v4_ai_toggle_msgs(cb: CallbackQuery, session: AsyncSession) -> None
 
 
 @router.callback_query(F.data.startswith("v4s:ai_toggle_images:"))
-async def cb_v4_ai_toggle_images(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_toggle_images(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -927,11 +920,11 @@ async def cb_v4_ai_toggle_images(cb: CallbackQuery, session: AsyncSession) -> No
 
 
 @router.callback_query(F.data.startswith("v4s:ai_toggle_links:"))
-async def cb_v4_ai_toggle_links(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_toggle_links(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     """V7: Toggle dedicated link / URL analysis."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -945,11 +938,11 @@ async def cb_v4_ai_toggle_links(cb: CallbackQuery, session: AsyncSession) -> Non
 
 
 @router.callback_query(F.data.startswith("v4s:ai_toggle_profiles:"))
-async def cb_v4_ai_toggle_profiles(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_toggle_profiles(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     """V7.2: Toggle username/display-name + group description AI screening."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -963,10 +956,10 @@ async def cb_v4_ai_toggle_profiles(cb: CallbackQuery, session: AsyncSession) -> 
 
 
 @router.callback_query(F.data.startswith("v4s:ai_sens:"))
-async def cb_v4_ai_sens(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_sens(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -978,11 +971,11 @@ async def cb_v4_ai_sens(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:ai_sens_set:"))
-async def cb_v4_ai_sens_set(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_sens_set(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     _, _, group_id_str, level = cb.data.split(":", 3)
     group_id = int(group_id_str)
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     await repo.update_settings(session, group_id, ai_sensitivity=level)
@@ -994,11 +987,11 @@ async def cb_v4_ai_sens_set(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:ai_actions:"))
-async def cb_v4_ai_actions(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_actions(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     """V7: Show multi-action selection panel."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -1010,13 +1003,13 @@ async def cb_v4_ai_actions(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:ai_action_toggle:"))
-async def cb_v4_ai_action_toggle(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_action_toggle(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     """V7: Toggle one AI action on / off."""
     await _answer(cb)
     parts = cb.data.split(":")   # v4s:ai_action_toggle:{gid}:{action}
     group_id = int(parts[2])
     action   = parts[3]          # delete | warn | mute | ban
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     col_map = {
@@ -1046,11 +1039,11 @@ async def cb_v4_ai_action_toggle(cb: CallbackQuery, session: AsyncSession) -> No
 
 
 @router.callback_query(F.data.startswith("v4s:ai_status:"))
-async def cb_v4_ai_status(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_status(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     """V7: 3-state system status page."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     settings = await repo.get_settings(session, group_id)
@@ -1067,11 +1060,11 @@ async def cb_v4_ai_status(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:ai_test:"))
-async def cb_v4_ai_test(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_ai_test(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     """RC1: Live Gemini connectivity test — 🧪 test button on the AI status page."""
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
-    if not await _ensure_authorized(cb, session, group_id):
+    if not await ensure_authorized(cb, bot, session, group_id):
         return
 
     # Show spinner immediately so the owner knows the request is in flight
@@ -1112,11 +1105,11 @@ async def cb_v4_ai_test(cb: CallbackQuery, session: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 @router.callback_query(F.data.startswith("v4s:reset:"))
-async def cb_v4_reset(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_reset(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb)
     group_id = int(cb.data.split(":")[2])
     # Only owner can reset
-    if not await _ensure_owner(cb, session, group_id):
+    if not await ensure_owner(cb, bot, session, group_id):
         return
 
     await _edit(
@@ -1127,11 +1120,11 @@ async def cb_v4_reset(cb: CallbackQuery, session: AsyncSession) -> None:
 
 
 @router.callback_query(F.data.startswith("v4s:reset_confirm:"))
-async def cb_v4_reset_confirm(cb: CallbackQuery, session: AsyncSession) -> None:
+async def cb_v4_reset_confirm(cb: CallbackQuery, bot: Bot, session: AsyncSession) -> None:
     await _answer(cb, "جارٍ إعادة الضبط…")
     group_id = int(cb.data.split(":")[2])
     # Only owner can reset
-    if not await _ensure_owner(cb, session, group_id):
+    if not await ensure_owner(cb, bot, session, group_id):
         return
 
     await repo.reset_group_settings(session, group_id)
