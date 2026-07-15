@@ -15,3 +15,5 @@ python-dotenv
 pytz
 sqlalchemy[asyncio]
 google-genai
+cryptography
+google-genai
