@@ -51,6 +51,24 @@ _PROVIDER = "gemini"
 _MIN_KEY_LENGTH = 10
 
 
+def _gemini_err_to_arabic(err: str | None) -> str:
+    """Map a Gemini validation error string to a specific Arabic message."""
+    if not err:
+        return S.ai_key_invalid_gemini
+    e = err.lower()
+    if any(k in e for k in ("api_key_invalid", "invalid api key", "api key not valid", "invalid_api_key")):
+        return S.ai_key_err_api_invalid
+    if any(k in e for k in ("quota", "resource_exhausted", "429", "rate limit", "ratelimitexceeded")):
+        return S.ai_key_err_quota
+    if any(k in e for k in ("permission_denied", "403", "forbidden")):
+        return S.ai_key_err_permission
+    if any(k in e for k in ("model not found", "not found", "404", "model_not_found", "unsupported")):
+        return S.ai_key_err_model
+    if any(k in e for k in ("network", "connection", "timeout", "timed out")):
+        return S.ai_key_err_network
+    return S.ai_key_err_unknown.format(detail=err[:120].strip())
+
+
 class AIKeyState(StatesGroup):
     waiting_for_key = State()
 
@@ -128,8 +146,8 @@ async def fsm_receive_key(message: Message, state: FSMContext, session: AsyncSes
 
     is_valid, _err = await ai_manager.validate_key(_PROVIDER, raw)
     if not is_valid:
-        log.info("ai_key_rejected: added_by=%s reason=invalid_key (not saved)", message.from_user.id)
-        await verifying.edit_text(S.ai_key_invalid_gemini, parse_mode="HTML", reply_markup=ai_setup_cancel_kb())
+        log.info("ai_key_rejected: added_by=%s reason=%r (not saved)", message.from_user.id, _err)
+        await verifying.edit_text(_gemini_err_to_arabic(_err), parse_mode="HTML", reply_markup=ai_setup_cancel_kb())
         return  # stay in the same state — let them try another key
 
     key_row = await repo.add_ai_key(session, provider=_PROVIDER, api_key=raw, added_by=message.from_user.id)

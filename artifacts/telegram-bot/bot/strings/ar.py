@@ -844,7 +844,14 @@ class S:
     # ─── V7.2: Live Gemini key validation (real test request before saving) ────
     ai_setup_verifying   = "⏳ جارٍ التحقق من المفتاح مع Gemini..."
     ai_key_verified_ok   = "✅ تم التحقق من المفتاح بنجاح."
-    ai_key_invalid_gemini = "❌ مفتاح Gemini غير صالح."
+    ai_key_invalid_gemini  = "❌ مفتاح Gemini غير صالح."
+    # Specific validation failure reasons
+    ai_key_err_api_invalid = "❌ مفتاح API غير صالح — تحقق من المفتاح في Google AI Studio."
+    ai_key_err_quota       = "❌ تجاوز حصة API أو معدل الطلبات — انتظر قليلاً ثم حاول مرة أخرى."
+    ai_key_err_permission  = "❌ المفتاح لا يملك الصلاحية — تحقق من إعدادات المشروع في Google Cloud."
+    ai_key_err_model       = "❌ النموذج المطلوب غير متاح لهذا المفتاح — تحقق من مستوى الاشتراك."
+    ai_key_err_network     = "❌ خطأ في الاتصال بـ Gemini — تحقق من الإنترنت وحاول مجدداً."
+    ai_key_err_unknown     = "❌ فشل التحقق من المفتاح: {detail}"
 
     # ─── V7.2: AI profile screening (username/display-name/description) ────────
     auto_ai_profile_blocked = "🚫 تم إزالة عضو بسبب اسم مستخدم/اسم عرض مخالف (تم رصده بالذكاء الاصطناعي)."

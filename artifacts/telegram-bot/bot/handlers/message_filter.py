@@ -419,13 +419,15 @@ async def _run_ai_image_check(
     fmap: dict[str, Filter],
     act_fn,
 ) -> bool:
+    # Gate: AI must be enabled and image analysis must be on.
+    # We intentionally do NOT gate on the ai_image filter row — the filter-row
+    # enabled flag was designed for deterministic filters. AI moderation is
+    # controlled entirely via GroupSettings (ai_enabled, ai_analyze_images) and
+    # the multi-action flags (ai_action_*). Requiring the filter row to be
+    # enabled too creates a hidden second gate that users never know to set.
     if not (settings and settings.ai_enabled and settings.ai_analyze_images):
         return False
     if not message.photo:
-        return False
-
-    f_ai_img = fmap.get("ai_image")
-    if not f_ai_img or not f_ai_img.enabled:
         return False
 
     try:
@@ -452,13 +454,13 @@ async def _run_ai_text_check(
     fmap: dict[str, Filter],
     act_fn,
 ) -> bool:
+    # Gate: AI must be enabled and message analysis must be on.
+    # We intentionally do NOT gate on the ai_text filter row — see the comment
+    # in _run_ai_image_check for the full rationale. ai_enabled +
+    # ai_analyze_messages are the correct and sufficient controls.
     if not (settings and settings.ai_enabled and settings.ai_analyze_messages):
         return False
     if not text or not text.strip():
-        return False
-
-    f_ai_text = fmap.get("ai_text")
-    if not f_ai_text or not f_ai_text.enabled:
         return False
 
     verdict   = await ai_manager.analyze_text(session, text)
@@ -479,16 +481,14 @@ async def _run_ai_links_check(
     """
     V7: Dedicated URL-safety analysis.
     Extracts up to 5 URLs from the message text and classifies them with the
-    LINK_SYSTEM_PROMPT. Only fires when ai_analyze_links is enabled and the
-    ai_text filter gate is open (reuses the same filter enable flag).
+    LINK_SYSTEM_PROMPT. Only fires when ai_analyze_links is enabled.
+
+    We intentionally do NOT gate on the ai_text filter row — see the comment
+    in _run_ai_image_check for the full rationale.
     """
     if not (settings and settings.ai_enabled and getattr(settings, "ai_analyze_links", False)):
         return False
     if not text or not text.strip():
-        return False
-
-    f_ai_text = fmap.get("ai_text")
-    if not f_ai_text or not f_ai_text.enabled:
         return False
 
     urls = _extract_urls(text)
