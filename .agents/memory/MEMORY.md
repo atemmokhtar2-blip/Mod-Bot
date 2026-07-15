@@ -2,3 +2,4 @@
 - [Telegram Stars donations](telegram-stars-donations.md) — XTR payments need empty provider_token; only successful_payment message proves payment, no native cancel event.
 - [Vercel + aiogram webhook](vercel-aiogram-webhook.md) — rebuild Bot/Dispatcher per request in Vercel Python functions; aiohttp session binds to a loop that won't survive across invocations.
 - [Encrypted secret + display mask](encrypted-secret-with-display-mask.md) — precompute a masked preview at insert time so display code never needs to decrypt stored API keys.
+- [Telegram AI moderation audit patterns](telegram-ai-moderation-audit.md) — live key validation, derived per-key health status, edited-message reuse, dedup cache, profile/description trigger points.

@@ -255,6 +255,8 @@ async def reset_group_settings(session: AsyncSession, group_id: int) -> None:
             ai_action_warn=False,
             ai_action_mute=False,
             ai_action_ban=False,
+            # V7.2
+            ai_analyze_profiles=True,
         )
     )
     # Disable all filters

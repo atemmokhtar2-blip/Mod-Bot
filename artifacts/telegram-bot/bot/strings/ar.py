@@ -776,7 +776,7 @@ class S:
     ai_admin_no_keys = "📭 لا توجد أي مفاتيح Gemini مسجّلة بعد. أضف واحداً باستخدام <code>/addaikey</code>."
     ai_admin_keys_list_header = "🔑 <b>مفاتيح Gemini API</b>\n\n"
     ai_admin_key_row = (
-        "#{id} — {status}\n"
+        "#{id} — {status} | {health}\n"
         "🏷️ {label}\n"
         "🔒 {masked}\n"
         "📊 استخدام: {usage} | ✅ نجاح: {success} | ❌ فشل: {failure}\n"
@@ -829,7 +829,7 @@ class S:
         "{key_list}"
         "════════════════════"
     )
-    ai_setup_key_line = "🔑 {label}\n{status} {masked}\n"
+    ai_setup_key_line = "🔑 {label}\n{status} | {health} {masked}\n"
     ai_setup_key_label_default = "مفتاح #{id}"
 
     ai_setup_delmenu_title = "اختر مفتاحاً لحذفه:"
@@ -840,3 +840,12 @@ class S:
     ai_setup_count_only = "📋 عدد مفاتيح Gemini المسجّلة: <b>{total}</b>\n🟢 المفعّلة منها: <b>{enabled}</b>"
 
     ai_setup_not_owner = "❌ إدارة مفاتيح Gemini متاحة لمالك البوت فقط."
+
+    # ─── V7.2: Live Gemini key validation (real test request before saving) ────
+    ai_setup_verifying   = "⏳ جارٍ التحقق من المفتاح مع Gemini..."
+    ai_key_verified_ok   = "✅ تم التحقق من المفتاح بنجاح."
+    ai_key_invalid_gemini = "❌ مفتاح Gemini غير صالح."
+
+    # ─── V7.2: AI profile screening (username/display-name/description) ────────
+    auto_ai_profile_blocked = "🚫 تم إزالة عضو بسبب اسم مستخدم/اسم عرض مخالف (تم رصده بالذكاء الاصطناعي)."
+    btn_ai_toggle_profiles = "{status} 👤 فحص الأسماء والملفات الشخصية"

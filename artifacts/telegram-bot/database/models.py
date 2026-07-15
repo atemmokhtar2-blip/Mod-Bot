@@ -219,6 +219,9 @@ class GroupSettings(Base):
     # ── AI Protection (V7) — link analysis + multi-action support ────────────
     # New analysis sub-modes
     ai_analyze_links: Mapped[bool] = mapped_column(Boolean, default=False)
+    # V7.2: screen new members' username/display name at join, and the group
+    # description whenever the bot is (re)added — independent of ai_analyze_links.
+    ai_analyze_profiles: Mapped[bool] = mapped_column(Boolean, default=True)
     # Multi-action: any combination of these can be enabled simultaneously.
     # Default keeps backward-compat: delete only (mirrors V6 filter default).
     ai_action_delete: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -424,6 +427,28 @@ class AIProviderKey(Base):
         if self.key_mask:
             return self.key_mask
         return "••••••••"  # legacy row with no mask yet (should self-heal on next migration pass)
+
+    def health_status(self) -> str:
+        """
+        V7.2: 3-state per-key health indicator, derived purely from stored
+        counters/timestamps (no live call needed to display it):
+          🟢 يعمل      — enabled, and last recorded outcome was a success
+                          (or the key has never been used yet)
+          🟡 انتهت الحصة — last recorded failure looks like a quota/rate-limit
+                          error (429 / quota / resource_exhausted)
+          🔴 غير صالح   — disabled, or last recorded outcome was a non-quota
+                          failure (auth error, invalid key, etc.)
+        """
+        if not self.enabled:
+            return "🔴 غير صالح"
+
+        err = (self.last_error or "").lower()
+        is_quota_error = any(tok in err for tok in ("quota", "resource_exhausted", "429", "rate limit"))
+
+        if self.last_failure_at and (not self.last_success_at or self.last_failure_at > self.last_success_at):
+            return "🟡 انتهت الحصة" if is_quota_error else "🔴 غير صالح"
+
+        return "🟢 يعمل"
 
 
 # ---------------------------------------------------------------------------

@@ -151,6 +151,10 @@ async def init_db() -> None:
         # V7.1: encrypted Gemini keys — masked display value stored separately
         # so normal reads never need to decrypt the key.
         "ALTER TABLE ai_provider_keys ADD COLUMN IF NOT EXISTS key_mask VARCHAR(64)",
+
+        # V7.2: AI profile screening (username/display-name at join, group
+        # description when the bot is added) — independent toggle.
+        "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS ai_analyze_profiles BOOLEAN DEFAULT TRUE",
     ]
 
     async with engine.begin() as conn:
@@ -162,7 +166,7 @@ async def init_db() -> None:
 
     await _encrypt_legacy_plaintext_keys()
 
-    log.info("Database tables initialised (V7.1).")
+    log.info("Database tables initialised (V7.2).")
 
 
 async def _encrypt_legacy_plaintext_keys() -> None:

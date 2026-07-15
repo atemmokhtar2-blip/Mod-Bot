@@ -31,6 +31,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.ai.key_manager import key_manager
+from bot.ai.manager import ai_manager
 from bot.filters.admin_filter import IsBotOwner
 from bot.keyboards.builder import (
     ai_key_delete_confirm_kb,
@@ -75,7 +76,9 @@ async def _render_manager_screen(target: Message, session: AsyncSession) -> None
     for k in keys:
         status = S.ai_admin_key_status_enabled if k.enabled else S.ai_admin_key_status_disabled
         label = k.label or S.ai_setup_key_label_default.format(id=k.id)
-        lines.append(S.ai_setup_key_line.format(label=f"#{k.id} {label}", status=status, masked=k.masked_key()))
+        lines.append(S.ai_setup_key_line.format(
+            label=f"#{k.id} {label}", status=status, health=k.health_status(), masked=k.masked_key(),
+        ))
 
     text = S.ai_setup_manager_title.format(
         total=counts["total"], enabled=counts["enabled"], key_list="\n".join(lines) + "\n",
@@ -114,21 +117,28 @@ async def fsm_receive_key(message: Message, state: FSMContext, session: AsyncSes
         await message.reply(S.ai_setup_addkey_invalid, parse_mode="HTML")
         return  # stay in the same state — let them try again
 
+    # Delete the message containing the raw key immediately, regardless of the
+    # outcome below — it must never linger in chat history either way.
+    try:
+        await message.delete()
+    except Exception as exc:
+        log.warning("Could not delete /aisetup key message: %s", exc)
+
+    verifying = await message.answer(S.ai_setup_verifying, parse_mode="HTML")
+
+    is_valid, _err = await ai_manager.validate_key(_PROVIDER, raw)
+    if not is_valid:
+        log.info("ai_key_rejected: added_by=%s reason=invalid_key (not saved)", message.from_user.id)
+        await verifying.edit_text(S.ai_key_invalid_gemini, parse_mode="HTML", reply_markup=ai_setup_cancel_kb())
+        return  # stay in the same state — let them try another key
+
     key_row = await repo.add_ai_key(session, provider=_PROVIDER, api_key=raw, added_by=message.from_user.id)
     key_manager.invalidate(_PROVIDER)
     await state.clear()
-    log.info("ai_key_added: key_id=%s added_by=%s via inline wizard", key_row.id, message.from_user.id)
+    log.info("ai_key_added: key_id=%s added_by=%s via inline wizard (verified)", key_row.id, message.from_user.id)
 
-    # Delete the message containing the raw key immediately — never let it
-    # linger in chat history.
-    try:
-        await message.delete()
-        confirmation = await message.answer(S.ai_setup_key_saved, parse_mode="HTML")
-    except Exception as exc:
-        log.warning("Could not delete /aisetup key message: %s", exc)
-        confirmation = await message.answer(S.ai_setup_key_saved_dm_fallback, parse_mode="HTML")
-
-    await _render_manager_screen(confirmation, session)
+    await verifying.edit_text(S.ai_key_verified_ok, parse_mode="HTML")
+    await _render_manager_screen(verifying, session)
 
 
 @router.callback_query(F.data == "aisetup:delmenu", IsBotOwner())

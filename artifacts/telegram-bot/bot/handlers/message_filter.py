@@ -507,6 +507,16 @@ async def _run_ai_links_check(
 # Main handler
 # ---------------------------------------------------------------------------
 
+@router.edited_message(F.chat.type.in_({"group", "supergroup"}))
+async def filter_edited_message(message: Message, bot: Bot, session: AsyncSession) -> None:
+    """
+    V7.2: Re-run the exact same filter pipeline against edited messages.
+    Covers the classic bypass of posting something innocuous, letting it pass,
+    then editing it into a violation afterwards.
+    """
+    await filter_message(message, bot, session)
+
+
 @router.message(F.chat.type.in_({"group", "supergroup"}))
 async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> None:
     """Intercept all group messages and apply enabled filters in priority order."""

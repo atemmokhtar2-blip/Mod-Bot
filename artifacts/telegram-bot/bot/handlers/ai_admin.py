@@ -24,6 +24,7 @@ from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.ai.key_manager import key_manager
+from bot.ai.manager import ai_manager
 from bot.filters.admin_filter import IsBotOwner
 from bot.strings.ar import S
 from database import repository as repo
@@ -49,18 +50,30 @@ async def cmd_addaikey(message: Message, session: AsyncSession) -> None:
     api_key = args[1].strip()
     label = args[2].strip() if len(args) > 2 else None
 
+    # Delete the user's message immediately regardless of outcome — it
+    # contains the raw key and must never linger in chat history.
+    try:
+        await message.delete()
+    except Exception as exc:
+        log.warning("Could not delete /addaikey message: %s", exc)
+
+    verifying = await message.answer(S.ai_setup_verifying, parse_mode="HTML")
+
+    is_valid, _err = await ai_manager.validate_key(_PROVIDER, api_key)
+    if not is_valid:
+        log.info("ai_key_rejected: added_by=%s reason=invalid_key (not saved)", message.from_user.id)
+        await verifying.edit_text(S.ai_key_invalid_gemini, parse_mode="HTML")
+        return
+
     key_row = await repo.add_ai_key(
         session, provider=_PROVIDER, api_key=api_key, label=label, added_by=message.from_user.id,
     )
     key_manager.invalidate(_PROVIDER)
+    log.info("ai_key_added: key_id=%s added_by=%s via /addaikey (verified)", key_row.id, message.from_user.id)
 
-    # Delete the user's message immediately — it contains the raw key.
-    try:
-        await message.delete()
-        await message.answer(S.ai_admin_key_added.format(key_id=key_row.id), parse_mode="HTML")
-    except Exception as exc:
-        log.warning("Could not delete /addaikey message: %s", exc)
-        await message.reply(S.ai_admin_key_added_dm_fallback.format(key_id=key_row.id), parse_mode="HTML")
+    await verifying.edit_text(
+        f"{S.ai_key_verified_ok}\n{S.ai_admin_key_added.format(key_id=key_row.id)}", parse_mode="HTML",
+    )
 
 
 @router.message(Command("listaikeys"))
@@ -76,6 +89,7 @@ async def cmd_listaikeys(message: Message, session: AsyncSession) -> None:
         lines.append(S.ai_admin_key_row.format(
             id=k.id,
             status=status,
+            health=k.health_status(),
             label=k.label or "—",
             masked=k.masked_key(),
             usage=k.usage_count,

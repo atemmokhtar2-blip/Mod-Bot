@@ -942,6 +942,24 @@ async def cb_v4_ai_toggle_links(cb: CallbackQuery, session: AsyncSession) -> Non
     await _rerender_ai_panel(cb, session, group_id)
 
 
+@router.callback_query(F.data.startswith("v4s:ai_toggle_profiles:"))
+async def cb_v4_ai_toggle_profiles(cb: CallbackQuery, session: AsyncSession) -> None:
+    """V7.2: Toggle username/display-name + group description AI screening."""
+    await _answer(cb)
+    group_id = int(cb.data.split(":")[2])
+    if not await _ensure_authorized(cb, session, group_id):
+        return
+
+    settings = await repo.get_settings(session, group_id)
+    new_state = not getattr(settings, "ai_analyze_profiles", True)
+    await repo.update_settings(session, group_id, ai_analyze_profiles=new_state)
+    await repo.add_log(
+        session, group_id=group_id, event_type="settings_changed",
+        actor_id=cb.from_user.id, details=f"ai_analyze_profiles → {new_state}",
+    )
+    await _rerender_ai_panel(cb, session, group_id)
+
+
 @router.callback_query(F.data.startswith("v4s:ai_sens:"))
 async def cb_v4_ai_sens(cb: CallbackQuery, session: AsyncSession) -> None:
     await _answer(cb)

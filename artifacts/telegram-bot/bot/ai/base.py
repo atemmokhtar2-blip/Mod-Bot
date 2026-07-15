@@ -56,3 +56,15 @@ class AIProvider:
     async def analyze_links(self, api_key: str, url_string: str) -> AIVerdict:
         """V7: Classify extracted URLs for safety threats. Override in each provider."""
         raise NotImplementedError
+
+    async def analyze_profile(self, api_key: str, profile_text: str) -> AIVerdict:
+        """V7.2: Classify a username/display-name or group description. Override in each provider."""
+        raise NotImplementedError
+
+    async def validate_key(self, api_key: str) -> None:
+        """
+        V7.2: Perform a minimal REAL request against the provider to confirm the
+        key is valid. Must raise on any failure (auth error, network error,
+        quota exhausted, etc). Must NOT raise on success.
+        """
+        raise NotImplementedError

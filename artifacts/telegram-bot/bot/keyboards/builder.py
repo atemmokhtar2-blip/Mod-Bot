@@ -720,6 +720,13 @@ def v4_ai_settings_kb(group_id: int, settings: GroupSettings) -> InlineKeyboardM
         ),
         callback_data=f"v4s:ai_toggle_links:{group_id}",
     )
+    # V7.2 — username/display-name + group description screening
+    builder.button(
+        text=S.btn_ai_toggle_profiles.format(
+            status=_status(getattr(settings, "ai_analyze_profiles", True))
+        ),
+        callback_data=f"v4s:ai_toggle_profiles:{group_id}",
+    )
     builder.button(
         text=S.btn_ai_sensitivity.format(
             level=sensitivity_labels.get(settings.ai_sensitivity, settings.ai_sensitivity)

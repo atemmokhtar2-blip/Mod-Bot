@@ -15,7 +15,9 @@ from aiogram.filters import ChatMemberUpdatedFilter, IS_MEMBER, IS_NOT_MEMBER
 from aiogram.types import ChatMemberUpdated
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.ai.manager import ai_manager
 from bot.keyboards.builder import manage_group_url_kb
+from bot.services import moderation_service as mod
 from bot.services.group_service import (
     deregister_group,
     register_channel,
@@ -23,6 +25,7 @@ from bot.services.group_service import (
 )
 from bot.strings.ar import S
 from database import repository as repo
+from database.models import AI_SENSITIVITY_THRESHOLDS
 from utils.helpers import format_welcome, mention_html
 from utils.logger import get_logger
 
@@ -54,6 +57,8 @@ async def bot_joined_chat(event: ChatMemberUpdated, bot: Bot, session: AsyncSess
             )
         except Exception as exc:
             log.warning("Could not send activation message to group %s: %s", chat.id, exc)
+
+        await _check_group_description(bot, session, chat.id)
 
     elif chat_type == "channel":
         await register_channel(session, bot, chat.id)
@@ -101,6 +106,87 @@ async def bot_left_chat(event: ChatMemberUpdated, session: AsyncSession) -> None
 
 
 # ---------------------------------------------------------------------------
+# V7.2: AI profile screening — username/display-name at join, group
+# description whenever the bot is (re)added. Never raises — failures are
+# silently skipped so lifecycle events keep working even if AI is down.
+# ---------------------------------------------------------------------------
+
+async def _check_group_description(bot: Bot, session: AsyncSession, chat_id: int) -> None:
+    settings = await repo.get_settings(session, chat_id)
+    if not settings or not settings.ai_enabled or not getattr(settings, "ai_analyze_profiles", True):
+        return
+    try:
+        chat = await bot.get_chat(chat_id)
+        description = (chat.description or "").strip()
+    except Exception as exc:
+        log.debug("Could not fetch group description for %s: %s", chat_id, exc)
+        return
+    if not description:
+        return
+
+    verdict = await ai_manager.analyze_description(session, description)
+    if verdict is None:
+        return
+    threshold = AI_SENSITIVITY_THRESHOLDS.get(settings.ai_sensitivity, 65)
+    if verdict.is_violation and verdict.confidence >= threshold:
+        log.warning(
+            "ai_description_violation: group_id=%s confidence=%s reason=%s",
+            chat_id, verdict.confidence, verdict.reason,
+        )
+        await repo.add_log(
+            session, group_id=chat_id, event_type="filter_triggered",
+            details=f"ai_description_violation confidence={verdict.confidence} reason={verdict.reason}",
+        )
+        # A bot cannot edit a group's description via the Bot API — this is
+        # informational only; owners see it in the moderation logs.
+
+
+async def _check_new_member_profile(
+    bot: Bot, session: AsyncSession, chat_id: int, user,
+) -> bool:
+    """Returns True if the member was removed for a violating username/display name."""
+    settings = await repo.get_settings(session, chat_id)
+    if not settings or not settings.ai_enabled or not getattr(settings, "ai_analyze_profiles", True):
+        return False
+
+    profile_text = f"username: @{user.username}" if user.username else ""
+    display_name = user.first_name or ""
+    if user.last_name:
+        display_name = f"{display_name} {user.last_name}"
+    if display_name:
+        profile_text = f"{profile_text}\ndisplay_name: {display_name}".strip()
+    if not profile_text:
+        return False
+
+    verdict = await ai_manager.analyze_profile(session, profile_text)
+    if verdict is None:
+        return False
+
+    threshold = AI_SENSITIVITY_THRESHOLDS.get(settings.ai_sensitivity, 65)
+    if not (verdict.is_violation and verdict.confidence >= threshold):
+        return False
+
+    reason = f"ai:profile:{verdict.reason[:100]}" if verdict.reason else "ai_profile_violation"
+    acted = False
+    if getattr(settings, "ai_action_ban", False):
+        acted = await mod.ban_user(bot, session, chat_id=chat_id, user_id=user.id, reason=reason)
+    else:
+        acted = await mod.kick_user(bot, session, chat_id=chat_id, user_id=user.id, reason=reason)
+
+    if acted:
+        await repo.add_log(
+            session, group_id=chat_id, event_type="filter_triggered",
+            target_id=user.id,
+            details=f"filter=ai_profile reason={reason}",
+        )
+        try:
+            await bot.send_message(chat_id, S.auto_ai_profile_blocked.format(name=display_name or str(user.id)))
+        except Exception:
+            pass
+    return acted
+
+
+# ---------------------------------------------------------------------------
 # New member joins
 # ---------------------------------------------------------------------------
 
@@ -128,6 +214,11 @@ async def new_member_joined(event: ChatMemberUpdated, bot: Bot, session: AsyncSe
         target_id=user.id,
         details=f"انضم {user.first_name}",
     )
+
+    # V7.2: screen username/display name before sending the welcome message.
+    # If the member is removed, skip the welcome message entirely.
+    if await _check_new_member_profile(bot, session, chat_id, user):
+        return
 
     settings = await repo.get_settings(session, chat_id)
     if settings and settings.welcome_enabled:
