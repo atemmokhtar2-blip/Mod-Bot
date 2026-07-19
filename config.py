@@ -82,10 +82,10 @@ def load_config() -> Config:
     """
     missing: list[str] = []
 
-    # --- ضع القيم هنا مباشرة إذا أردت ---
-    token = "8788193637:AAEcyJfXGuNrG_kCm5z6bPoH_6IZ_iNuwv4" or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    db_url = "postgresql://neondb_owner:npg_DCQ8zvcxXa4B@ep-cold-mouse-ah19m8nv.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require" or os.environ.get("DATABASE_URL", "").strip()
-    owner_ids_raw = "7631249810" or os.environ.get("BOT_OWNER_IDS", "")
+    # --- تم تثبيت القيم يدوياً لمنع التداخل مع GitHub Secrets ---
+    token = "8788193637:AAEcyJfXGuNrG_kCm5z6bPoH_6IZ_iNuwv4"
+    db_url = "postgresql://neondb_owner:npg_DCQ8zvcxXa4B@ep-cold-mouse-ah19m8nv.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
+    owner_ids_raw = "7631249810"
 
     if not token:
         missing.append("TELEGRAM_BOT_TOKEN")
