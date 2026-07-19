@@ -533,7 +533,61 @@ async def filter_message(message: Message, bot: Bot, session: AsyncSession) -> N
     if not group or not group.is_active:
         return
 
-    # Do not moderate Telegram admins / owners
+    # ─── V8: Quick Admin Commands (Reply-based) ──────────────────────────────
+    # If an admin replies with "طرد", "حظر", or "كتم", execute the action immediately.
+    if message.reply_to_message and text:
+        # Check if the sender is an admin
+        is_admin = False
+        try:
+            member = await bot.get_chat_member(chat_id, user.id)
+            if member.status in ("administrator", "creator"):
+                is_admin = True
+        except Exception:
+            pass
+
+        if is_admin:
+            target = message.reply_to_message.from_user
+            if target and not target.is_bot:
+                clean_text = text.strip().lower()
+                
+                # 1. Ban/Kick (طرد or حظر)
+                if clean_text in ("طرد", "حظر"):
+                    try:
+                        await bot.ban_chat_member(chat_id, target.id)
+                        await message.reply(f"🚫 تم {clean_text} المستخدم <b>{target.full_name}</b> بنجاح.")
+                        await repo.add_log(session, chat_id, "user_banned", target.id, f"Quick command: {clean_text} by {user.id}")
+                        return
+                    except Exception as e:
+                        await message.reply(f"❌ فشل الـ {clean_text}: {str(e)}")
+                        return
+
+                # 2. Mute (كتم)
+                elif clean_text == "كتم":
+                    try:
+                        # Default mute for 24 hours if no duration specified
+                        until = int(time.time() + 86400)
+                        await bot.restrict_chat_member(
+                            chat_id, target.id,
+                            permissions={"can_send_messages": False},
+                            until_date=until
+                        )
+                        await message.reply(f"🔇 تم كتم المستخدم <b>{target.full_name}</b> لمدة 24 ساعة.")
+                        await repo.add_log(session, chat_id, "user_muted", target.id, f"Quick command: كتم by {user.id}")
+                        return
+                    except Exception as e:
+                        await message.reply(f"❌ فشل الكتم: {str(e)}")
+                        return
+
+                # 3. Unban/Unmute (إلغاء or فك)
+                elif clean_text in ("إلغاء", "فك"):
+                    try:
+                        await bot.unban_chat_member(chat_id, target.id, grow_confused=True)
+                        await message.reply(f"✅ تم فك القيود عن <b>{target.full_name}</b>.")
+                        return
+                    except Exception:
+                        pass
+
+    # Do not moderate Telegram admins / owners for standard filters
     try:
         member = await bot.get_chat_member(chat_id, user.id)
         if member.status in ("administrator", "creator"):
