@@ -1,23 +1,19 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "installCommand": "echo 'Skipping pnpm install'",
-  "buildCommand": "echo 'Skipping pnpm build'",
-  "functions": {
-    "api/webhook.py": {
-      "runtime": "python3.12",
-      "maxDuration": 30,
-      "memory": 512
-    }
-  },
-  "rewrites": [
+  "builds": [
     {
-      "source": "/telegram/webhook",
-      "destination": "/api/webhook.py"
+      "src": "api/webhook.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/telegram/webhook",
+      "dest": "api/webhook.py"
     },
     {
-      "source": "/health",
-      "destination": "/api/webhook.py"
+      "src": "/health",
+      "dest": "api/webhook.py"
     }
   ]
 }
