@@ -3,8 +3,7 @@ Bot + Dispatcher factory.
 
 Single source of truth for how the bot is assembled.
 Used by:
-  - main.py           (long-polling mode — Replit / any VPS)
-  - api/webhook.py    (serverless webhook mode — Vercel)
+  - main.py           (long-polling mode — GitHub Actions / VPS)
 """
 
 from __future__ import annotations
