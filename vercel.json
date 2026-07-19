@@ -1,6 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
+  "installCommand": "echo 'Skipping pnpm install'",
+  "buildCommand": "echo 'Skipping pnpm build'",
   "functions": {
     "api/webhook.py": {
       "runtime": "python3.12",
@@ -16,15 +18,6 @@
     {
       "source": "/health",
       "destination": "/api/webhook.py"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" }
-      ]
     }
   ]
 }
