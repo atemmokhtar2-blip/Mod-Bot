@@ -1,0 +1,223 @@
+"""
+Gemini implementation of the AIProvider interface.
+
+Uses the `google-genai` SDK directly with a raw, user-supplied API key (no
+Replit-managed connector) since the key manager owns key lifecycle. Always
+requests `response_mime_type="application/json"` and still defensively
+parses the response — a model can occasionally wrap JSON in prose despite
+instructions, so we extract the first `{...}` block rather than trusting
+`response.text` to be pure JSON.
+"""
+
+from __future__ import annotations
+
+import json
+
+from bot.ai.base import AIProvider, AIVerdict, CLASSIFICATIONS, RECOMMENDED_ACTIONS
+from bot.ai.prompts import (
+    DESCRIPTION_SYSTEM_PROMPT,
+    IMAGE_SYSTEM_PROMPT,
+    LINK_SYSTEM_PROMPT,
+    PROFILE_SYSTEM_PROMPT,
+    TEXT_SYSTEM_PROMPT,
+)
+from utils.logger import get_logger
+
+log = get_logger(__name__)
+
+_MODEL = "gemini-2.5-flash"
+
+
+def _extract_first_json(text: str) -> dict:
+    """
+    Extract the first complete, valid JSON object from *text*.
+
+    Uses json.JSONDecoder.raw_decode() which correctly handles nested braces
+    and stops at the end of the first well-formed object — unlike a greedy
+    regex which would grab everything up to the last ``}`` and break when
+    Gemini returns multiple JSON blocks or trailing prose.
+    """
+    decoder = json.JSONDecoder()
+    # Scan forward from each '{' until raw_decode succeeds.
+    idx = text.find("{")
+    while idx != -1:
+        try:
+            obj, _ = decoder.raw_decode(text, idx)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+        idx = text.find("{", idx + 1)
+    raise ValueError(f"No JSON object found in Gemini response: {text[:200]!r}")
+
+
+def _parse_verdict(raw_text: str | None) -> AIVerdict:
+    data = _extract_first_json(raw_text or "")
+
+    classification = str(data.get("classification", "SAFE")).upper()
+    if classification not in CLASSIFICATIONS:
+        classification = "SAFE"
+
+    try:
+        confidence = int(data.get("confidence", 0))
+    except (TypeError, ValueError):
+        confidence = 0
+    confidence = max(0, min(100, confidence))
+
+    reason = str(data.get("reason", ""))[:500]
+
+    action = str(data.get("recommended_action", "ignore")).lower()
+    if action not in RECOMMENDED_ACTIONS:
+        action = "ignore"
+
+    return AIVerdict(
+        classification=classification,
+        confidence=confidence,
+        reason=reason,
+        recommended_action=action,
+    )
+
+
+class GeminiProvider(AIProvider):
+    name = "gemini"
+
+    async def analyze_text(self, api_key: str, text: str) -> AIVerdict:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model=_MODEL,
+            contents=text[:4000],
+            config=types.GenerateContentConfig(
+                system_instruction=TEXT_SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=300,
+            ),
+        )
+        return _parse_verdict(response.text)
+
+    async def analyze_image(self, api_key: str, image_bytes: bytes, mime_type: str) -> AIVerdict:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model=_MODEL,
+            contents=[types.Part.from_bytes(data=image_bytes, mime_type=mime_type)],
+            config=types.GenerateContentConfig(
+                system_instruction=IMAGE_SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=300,
+            ),
+        )
+        return _parse_verdict(response.text)
+
+    async def analyze_links(self, api_key: str, url_string: str) -> AIVerdict:
+        """V7: Classify extracted URLs for safety threats (phishing, malware, scams…)."""
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model=_MODEL,
+            contents=url_string[:2000],
+            config=types.GenerateContentConfig(
+                system_instruction=LINK_SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=300,
+            ),
+        )
+        return _parse_verdict(response.text)
+
+    async def analyze_profile(self, api_key: str, profile_text: str) -> AIVerdict:
+        """V7.2: Classify a username/display-name or group description string."""
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model=_MODEL,
+            contents=profile_text[:500],
+            config=types.GenerateContentConfig(
+                system_instruction=PROFILE_SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=300,
+            ),
+        )
+        return _parse_verdict(response.text)
+
+    async def analyze_description(self, api_key: str, description_text: str) -> AIVerdict:
+        """V7.2: Classify a group description/bio string."""
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model=_MODEL,
+            contents=description_text[:1000],
+            config=types.GenerateContentConfig(
+                system_instruction=DESCRIPTION_SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=300,
+            ),
+        )
+        return _parse_verdict(response.text)
+
+    async def test_connection(self, api_key: str) -> dict:
+        """RC1: Timed Gemini ping — returns {"model", "latency_ms"}. Raises on failure."""
+        import asyncio
+        import time
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        t0 = time.monotonic()
+        await asyncio.wait_for(
+            client.aio.models.generate_content(
+                model=_MODEL,
+                contents="ping",
+                config=types.GenerateContentConfig(
+                    system_instruction="Reply with exactly: OK",
+                    temperature=0,
+                    max_output_tokens=5,
+                ),
+            ),
+            timeout=30.0,
+        )
+        return {"model": _MODEL, "latency_ms": int((time.monotonic() - t0) * 1000)}
+
+    async def validate_key(self, api_key: str) -> None:
+        """
+        V7.2: Perform a minimal REAL request to Gemini to confirm the key is
+        valid before it is ever saved. Raises on any failure — caller decides
+        how to surface that to the bot owner.
+
+        A 30-second timeout is enforced so the bot never hangs indefinitely
+        waiting for a response (e.g. on network issues or Gemini overload).
+        """
+        import asyncio
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        try:
+            await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=_MODEL,
+                    contents="ping",
+                    config=types.GenerateContentConfig(
+                        system_instruction="Reply with exactly: OK",
+                        temperature=0,
+                        max_output_tokens=5,
+                    ),
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError("انتهت مهلة التحقق (30 ثانية) — تحقق من الاتصال بالإنترنت وأعد المحاولة.")

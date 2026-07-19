@@ -1,19 +1,14 @@
-# Python dependencies for Vercel serverless functions (api/webhook.py).
-# Vercel's Python runtime picks up this file from the project root.
-#
-# Pinned to match artifacts/telegram-bot/requirements.txt exactly.
-
+# Telegram Bot
 aiogram==3.13.1
+
+# Database
 SQLAlchemy==2.0.51
 asyncpg==0.31.0
 greenlet==3.5.3
+
+# Utilities
 pytz==2026.2
-aiofiles
-aiogram==3.13.1
-asyncpg
-python-dotenv
-pytz
-sqlalchemy[asyncio]
-google-genai
-cryptography
-google-genai
+
+# AI (Gemini) + key encryption
+google-genai==2.8.0
+cryptography==49.0.0
