@@ -82,11 +82,14 @@ def load_config() -> Config:
     """
     missing: list[str] = []
 
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    # --- ضع القيم هنا مباشرة إذا أردت ---
+    token = "8788193637:AAHaoywt7vkYeowjrPadVkO15cSLEBpGTpo" or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    db_url = "postgresql://neondb_owner:npg_DCQ8zvcxXa4B@ep-cold-mouse-ah19m8nv.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require" or os.environ.get("DATABASE_URL", "").strip()
+    owner_ids_raw = "7631249810" or os.environ.get("BOT_OWNER_IDS", "")
+
     if not token:
         missing.append("TELEGRAM_BOT_TOKEN")
 
-    db_url = os.environ.get("DATABASE_URL", "").strip()
     if not db_url:
         missing.append("DATABASE_URL")
 
@@ -101,7 +104,7 @@ def load_config() -> Config:
         bot_token=token,
         database_url=_adapt_db_url(db_url),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
-        bot_owner_ids=_parse_owner_ids(os.environ.get("BOT_OWNER_IDS", "")),
+        bot_owner_ids=_parse_owner_ids(owner_ids_raw),
     )
 
 
